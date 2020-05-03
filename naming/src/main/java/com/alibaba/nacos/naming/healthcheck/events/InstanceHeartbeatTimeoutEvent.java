@@ -21,6 +21,7 @@ import org.springframework.context.ApplicationEvent;
 /**
  * @author pbting
  * @date 2019-05-28 8:29 PM
+ * 代表某个实例失活
  */
 public class InstanceHeartbeatTimeoutEvent extends ApplicationEvent {
 

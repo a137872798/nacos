@@ -28,6 +28,7 @@ import java.util.List;
  * Naming Service
  *
  * @author nkorange
+ * 命名服务对象 实际上就是注册中心
  */
 public interface NamingService {
 
@@ -38,6 +39,7 @@ public interface NamingService {
      * @param ip          instance ip
      * @param port        instance port
      * @throws NacosException
+     * 注册某个服务实例   看来是先通过 服务名匹配 使得连接上服务提供者后 才尝试调用目标方法 (如果没有对应方法 那么在那时才返回 NoSuchMethod)
      */
     void registerInstance(String serviceName, String ip, int port) throws NacosException;
 
@@ -182,6 +184,7 @@ public interface NamingService {
      * @param subscribe   if subscribe the service
      * @return A list of instance
      * @throws NacosException
+     * 获取实例的同时 订阅该服务 这样每当服务实例发生变化时 都会收到通知
      */
     List<Instance> getAllInstances(String serviceName, boolean subscribe) throws NacosException;
 
@@ -422,6 +425,7 @@ public interface NamingService {
      * @param serviceName name of service
      * @param listener    event listener
      * @throws NacosException
+     * 为某个服务设置监听器  同时首次创建就会尝试触发
      */
     void subscribe(String serviceName, EventListener listener) throws NacosException;
 

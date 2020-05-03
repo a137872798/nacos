@@ -160,6 +160,7 @@ public class UserController {
      * @param request  http request
      * @return new token of the user
      * @throws AccessException if user info is incorrect
+     * 这里做登录处理  如果要做权限认证 必然要引入该模块   该功能忽略
      */
     @PostMapping("/login")
     public Object login(@RequestParam String username, @RequestParam String password,

@@ -22,6 +22,7 @@ import com.alibaba.nacos.api.config.ConfigChangeEvent;
  * AbstractConfigChangeListener
  *
  * @author rushsky518
+ * 该对象会监听配置的变化
  */
 public abstract class AbstractConfigChangeListener extends AbstractListener {
     /**

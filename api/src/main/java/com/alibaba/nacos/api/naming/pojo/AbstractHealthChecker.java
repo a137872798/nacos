@@ -27,6 +27,7 @@ import com.google.common.base.Objects;
 
 /**
  * @author nkorange
+ * 心跳检测对象
  */
 public abstract class AbstractHealthChecker implements Cloneable {
 
@@ -70,12 +71,20 @@ public abstract class AbstractHealthChecker implements Cloneable {
         }
     }
 
+    /**
+     * 代表基于 Http协议的心跳检测对象
+     */
     public static class Http extends AbstractHealthChecker {
         public static final String TYPE = "HTTP";
 
+        /**
+         * 本次进行心跳检测访问的 路径
+         */
         private String path = "";
+        // 格式化后的 请求头字符串
         private String headers = "";
 
+        // 返回200 代表检测成功
         private int expectedResponseCode = 200;
 
         public Http() {
@@ -106,6 +115,10 @@ public abstract class AbstractHealthChecker implements Cloneable {
             this.headers = headers;
         }
 
+        /**
+         * 将请求头格式化输出
+         * @return
+         */
         @JSONField(serialize = false)
         public Map<String, String> getCustomHeaders() {
             if (StringUtils.isBlank(headers)) {
@@ -175,6 +188,9 @@ public abstract class AbstractHealthChecker implements Cloneable {
         }
     }
 
+    /**
+     * 基于tcp 的心跳检测对象
+     */
     public static class Tcp extends AbstractHealthChecker {
         public static final String TYPE = "TCP";
 

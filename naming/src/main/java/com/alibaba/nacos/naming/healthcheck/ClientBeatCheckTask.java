@@ -37,15 +37,25 @@ import java.util.List;
  * Check and update statues of ephemeral instances, remove them if they have been expired.
  *
  * @author nkorange
+ * 该对象只负责检测服务下所有实例是否过期 有过期的就通知到  nacos-naming client (client作为订阅者)
+ * 该对象本身不会对实例发送心跳
  */
 public class ClientBeatCheckTask implements Runnable {
 
+    /**
+     * 这个心跳任务对应的服务信息  服务内部有集群和instance信息
+     * naming 实际上就是注册中心的职能 这里代表某些订阅者订阅了 某个服务类  这样当另一批提供者注册上来的时候就可以匹配了
+     * 同时必须具备心跳检测机制 及时通知订阅者 哪些服务下线了
+     */
     private Service service;
 
+    /**
+     * 代表该心跳任务是针对哪个服务的
+     * @param service
+     */
     public ClientBeatCheckTask(Service service) {
         this.service = service;
     }
-
 
     @JSONField(serialize = false)
     public PushService getPushService() {
@@ -57,14 +67,26 @@ public class ClientBeatCheckTask implements Runnable {
         return SpringContext.getAppContext().getBean(DistroMapper.class);
     }
 
+    /**
+     * 全局配置对象
+     * @return
+     */
     public GlobalConfig getGlobalConfig() {
         return SpringContext.getAppContext().getBean(GlobalConfig.class);
     }
 
+    /**
+     * 存储一些特殊信息的 先不管
+     * @return
+     */
     public SwitchDomain getSwitchDomain() {
         return SpringContext.getAppContext().getBean(SwitchDomain.class);
     }
 
+    /**
+     * 按特定格式生成一个 key
+     * @return
+     */
     public String taskKey() {
         return KeyBuilder.buildServiceMetaKey(service.getNamespaceId(), service.getName());
     }
@@ -72,32 +94,41 @@ public class ClientBeatCheckTask implements Runnable {
     @Override
     public void run() {
         try {
+            //
             if (!getDistroMapper().responsible(service.getName())) {
                 return;
             }
 
+            // 如果当前不需要检测心跳 忽略本次任务
             if (!getSwitchDomain().isHealthCheckEnabled()) {
                 return;
             }
 
+            // 获取所有临时的 实例节点
             List<Instance> instances = service.allIPs(true);
 
             // first set health status of instances:
             for (Instance instance : instances) {
+                // 代表这个 实例已经长时间没有收到心跳了
                 if (System.currentTimeMillis() - instance.getLastBeat() > instance.getInstanceHeartBeatTimeOut()) {
+                    // 如果还没有设置过标记的话
                     if (!instance.isMarked()) {
                         if (instance.isHealthy()) {
+                            // 设置成 非健康
                             instance.setHealthy(false);
                             Loggers.EVT_LOG.info("{POS} {IP-DISABLED} valid: {}:{}@{}@{}, region: {}, msg: client timeout after {}, last beat: {}",
                                 instance.getIp(), instance.getPort(), instance.getClusterName(), service.getName(),
                                 UtilsAndCommons.LOCALHOST_SITE, instance.getInstanceHeartBeatTimeOut(), instance.getLastBeat());
+                            // 当服务发生变化时  需要通知所有订阅该服务的 nacos-naming client
                             getPushService().serviceChanged(service);
+                            // 发送一个实例过期的事件
                             SpringContext.getAppContext().publishEvent(new InstanceHeartbeatTimeoutEvent(this, instance));
                         }
                     }
                 }
             }
 
+            // 是否要删除没有收到心跳的实例
             if (!getGlobalConfig().isExpireInstance()) {
                 return;
             }
@@ -105,6 +136,7 @@ public class ClientBeatCheckTask implements Runnable {
             // then remove obsolete instances:
             for (Instance instance : instances) {
 
+                // 已经被标记过的就忽略
                 if (instance.isMarked()) {
                     continue;
                 }
@@ -112,6 +144,7 @@ public class ClientBeatCheckTask implements Runnable {
                 if (System.currentTimeMillis() - instance.getLastBeat() > instance.getIpDeleteTimeout()) {
                     // delete instance
                     Loggers.SRV_LOG.info("[AUTO-DELETE-IP] service: {}, ip: {}", service.getName(), JSON.toJSONString(instance));
+                    // 删除实例信息
                     deleteIP(instance);
                 }
             }
@@ -123,6 +156,7 @@ public class ClientBeatCheckTask implements Runnable {
     }
 
 
+    // 发起请求删除某个服务实例 这里是发往本机
     private void deleteIP(Instance instance) {
 
         try {

@@ -27,10 +27,14 @@ public class HealthCheckReactor {
 
     private static final ScheduledExecutorService EXECUTOR;
 
+    /**
+     * 存放心跳结果
+     */
     private static Map<String, ScheduledFuture> futureMap = new ConcurrentHashMap<>();
 
     static {
 
+        // 根据 CPU 核数 创建 线程池
         int processorCount = Runtime.getRuntime().availableProcessors();
         EXECUTOR
                 = Executors

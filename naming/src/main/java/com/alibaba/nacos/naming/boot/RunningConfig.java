@@ -28,6 +28,7 @@ import javax.servlet.ServletContext;
 import java.util.TreeMap;
 
 /**
+ * 本机运行时的配置
  * @author nkorange
  */
 @Component("runningConfig")
@@ -37,11 +38,18 @@ public class RunningConfig implements ApplicationListener<WebServerInitializedEv
 
     private static String contextPath;
 
+    /**
+     * 当前web 上下文
+     */
     @Autowired
     private ServletContext servletContext;
 
     private static volatile boolean isServerInitialized = false;
 
+    /**
+     * 当感知到本机启动时 读取端口号
+     * @param event
+     */
     @Override
     public void onApplicationEvent(WebServerInitializedEvent event) {
 

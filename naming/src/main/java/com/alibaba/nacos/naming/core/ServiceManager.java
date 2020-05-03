@@ -69,6 +69,7 @@ import org.springframework.util.CollectionUtils;
  * Core manager storing all services in Nacos
  *
  * @author nkorange
+ * 该对象负责管理 nacos 下所有的服务  同时实现了 RecordListener 接口 会监听 service的变化
  */
 @Component
 @DependsOn("nacosApplicationContext")
@@ -76,15 +77,25 @@ public class ServiceManager implements RecordListener<Service> {
 
     /**
      * Map<namespace, Map<group::serviceName, Service>>
+     *     记录了某个命名空间下 有哪些group::服务名  以及对应的服务信息
      */
     private Map<String, Map<String, Service>> serviceMap = new ConcurrentHashMap<>();
 
+    /**
+     * ServiceKey 包含服务id 服务名 集群id 等
+     */
     private LinkedBlockingDeque<ServiceKey> toBeUpdatedServicesQueue = new LinkedBlockingDeque<>(1024 * 1024);
 
+    /**
+     * 该对象负责将某些数据发往其他节点 或者从其他节点获取数据
+     */
     private Synchronizer synchronizer = new ServiceStatusSynchronizer();
 
     private final Lock lock = new ReentrantLock();
 
+    /**
+     * 通过一致性服务 可以确保数据成功的被添加到nacos 的集群
+     */
     @Resource(name = "consistencyDelegate")
     private ConsistencyService consistencyService;
 
@@ -97,9 +108,15 @@ public class ServiceManager implements RecordListener<Service> {
     @Autowired
     private ServerListManager serverListManager;
 
+    /**
+     * 将变化信息主动推给客户端
+     */
     @Autowired
     private PushService pushService;
 
+    /**
+     * 该对象内部存储了  raft集群内所有的节点
+     */
     @Autowired
     private RaftPeerSet raftPeerSet;
 
@@ -123,6 +140,7 @@ public class ServiceManager implements RecordListener<Service> {
 
         UtilsAndCommons.SERVICE_UPDATE_EXECUTOR.submit(new UpdatedServiceProcessor());
 
+        // 自动清理不再提供的服务
         if (emptyServiceAutoClean) {
 
             Loggers.SRV_LOG.info("open empty service auto clean job, initialDelay : {} ms, period : {} ms", cleanEmptyServiceDelay, cleanEmptyServicePeriod);
@@ -138,6 +156,7 @@ public class ServiceManager implements RecordListener<Service> {
 
         try {
             Loggers.SRV_LOG.info("listen for service meta change");
+            // 该对象作为 nacos内置的监听器 可以基于 订阅观察模型 处理新注册的服务实例
             consistencyService.listen(KeyBuilder.SERVICE_META_KEY_PREFIX, this);
         } catch (NacosException e) {
             Loggers.SRV_LOG.error("listen for service meta change failed!");
@@ -148,6 +167,13 @@ public class ServiceManager implements RecordListener<Service> {
         return serviceMap.get(namespaceId);
     }
 
+    /**
+     * 代表本节点某 service 校验和与 目标接待校验和不一致
+     * @param namespaceId
+     * @param serviceName
+     * @param serverIP
+     * @param checksum
+     */
     public void addUpdatedService2Queue(String namespaceId, String serviceName, String serverIP, String checksum) {
         lock.lock();
         try {
@@ -171,6 +197,12 @@ public class ServiceManager implements RecordListener<Service> {
         return KeyBuilder.matchServiceMetaKey(key) && !KeyBuilder.matchSwitchKey(key);
     }
 
+    /**
+     * 当感知到某个服务发生变化时
+     * @param key   target key
+     * @param service
+     * @throws Exception
+     */
     @Override
     public void onChange(String key, Service service) throws Exception {
         try {
@@ -179,20 +211,25 @@ public class ServiceManager implements RecordListener<Service> {
                 return;
             }
 
+            // 如果namespaceId 不存在 设置默认值
             if (StringUtils.isBlank(service.getNamespaceId())) {
                 service.setNamespaceId(Constants.DEFAULT_NAMESPACE_ID);
             }
 
             Loggers.RAFT.info("[RAFT-NOTIFIER] datum is changed, key: {}, value: {}", key, service);
 
+            // 查看当前注册中心是否维护了 某个服务
             Service oldDom = getService(service.getNamespaceId(), service.getName());
 
             if (oldDom != null) {
+                // 更新 nacos server 下的某个服务实例
                 oldDom.update(service);
                 // re-listen to handle the situation when the underlying listener is removed:
+                // 这里针对 ephemeral = true 和 ephemeral = false 分别注册了监听器   ephemeral 分别对应基于AP 和 CP的实现
                 consistencyService.listen(KeyBuilder.buildInstanceListKey(service.getNamespaceId(), service.getName(), true), oldDom);
                 consistencyService.listen(KeyBuilder.buildInstanceListKey(service.getNamespaceId(), service.getName(), false), oldDom);
             } else {
+                // 为 nacos server 注册某个服务信息
                 putServiceAndInit(service);
             }
         } catch (Throwable e) {
@@ -200,6 +237,11 @@ public class ServiceManager implements RecordListener<Service> {
         }
     }
 
+    /**
+     * 将服务从 本节点中移除
+     * @param key target key
+     * @throws Exception
+     */
     @Override
     public void onDelete(String key) throws Exception {
         String namespace = KeyBuilder.getNamespace(key);
@@ -220,6 +262,9 @@ public class ServiceManager implements RecordListener<Service> {
         chooseServiceMap(namespace).remove(name);
     }
 
+    /**
+     * 该任务负责定期与其他server 做数据同步
+     */
     private class UpdatedServiceProcessor implements Runnable {
         //get changed service from other server asynchronously
         @Override
@@ -229,6 +274,7 @@ public class ServiceManager implements RecordListener<Service> {
             try {
                 while (true) {
                     try {
+                        // 从阻塞队列中取出待更新的service
                         serviceKey = toBeUpdatedServicesQueue.take();
                     } catch (Exception e) {
                         Loggers.EVT_LOG.error("[UPDATE-DOMAIN] Exception while taking item from LinkedBlockingDeque.");
@@ -237,6 +283,7 @@ public class ServiceManager implements RecordListener<Service> {
                     if (serviceKey == null) {
                         continue;
                     }
+                    // 异步提交任务
                     GlobalExecutor.submitServiceUpdate(new ServiceUpdater(serviceKey));
                 }
             } catch (Exception e) {
@@ -327,7 +374,14 @@ public class ServiceManager implements RecordListener<Service> {
         return raftPeerSet.local();
     }
 
+    /**
+     * 从其他节点获取某服务的最新数据
+     * @param namespaceId
+     * @param serviceName
+     * @param serverIP
+     */
     public void updatedHealthStatus(String namespaceId, String serviceName, String serverIP) {
+        // 通过同步器去获取消息
         Message msg = synchronizer.get(serverIP, UtilsAndCommons.assembleFullServiceName(namespaceId, serviceName));
         JSONObject serviceJson = JSON.parseObject(msg.getData());
 
@@ -340,6 +394,7 @@ public class ServiceManager implements RecordListener<Service> {
             ipsMap.put(strings[0], strings[1]);
         }
 
+        // 找到本节点下对应的 service 信息
         Service service = getService(namespaceId, serviceName);
 
         if (service == null) {
@@ -351,7 +406,9 @@ public class ServiceManager implements RecordListener<Service> {
         List<Instance> instances = service.allIPs();
         for (Instance instance : instances) {
 
+            // 判断能否从对端找到
             boolean valid = Boolean.parseBoolean(ipsMap.get(instance.toIPAddr()));
+            // 代表服务发生了变化
             if (valid != instance.isHealthy()) {
                 changed = true;
                 instance.setHealthy(valid);
@@ -440,13 +497,21 @@ public class ServiceManager implements RecordListener<Service> {
         return count;
     }
 
+    /**
+     * 当某个服务下没有服务提供者实例时  且  扫描次数超过一定值  则对该服务进行清理
+     * @param namespaceId
+     * @param serviceName
+     * @throws Exception
+     */
     public void easyRemoveService(String namespaceId, String serviceName) throws Exception {
 
+        // 先通过 容器找到对应service
         Service service = getService(namespaceId, serviceName);
         if (service == null) {
             throw new IllegalArgumentException("specified service not exist, serviceName : " + serviceName);
         }
 
+        // 从一致性服务中移除 该service
         consistencyService.remove(KeyBuilder.buildServiceMetaKey(namespaceId, serviceName));
     }
 
@@ -454,15 +519,31 @@ public class ServiceManager implements RecordListener<Service> {
         consistencyService.put(KeyBuilder.buildServiceMetaKey(service.getNamespaceId(), service.getName()), service);
     }
 
+    /**
+     *
+     * @param namespaceId
+     * @param serviceName
+     * @param local  如果是瞬时实例 该标识为true
+     * @throws NacosException
+     */
     public void createEmptyService(String namespaceId, String serviceName, boolean local) throws NacosException {
         createServiceIfAbsent(namespaceId, serviceName, local, null);
     }
 
+    /**
+     * @param namespaceId
+     * @param serviceName
+     * @param local
+     * @param cluster
+     * @throws NacosException
+     */
     public void createServiceIfAbsent(String namespaceId, String serviceName, boolean local, Cluster cluster) throws NacosException {
+        // 先尝试定位到服务对象
         Service service = getService(namespaceId, serviceName);
         if (service == null) {
 
             Loggers.SRV_LOG.info("creating empty service {}:{}", namespaceId, serviceName);
+            // 先创建服务对象
             service = new Service();
             service.setName(serviceName);
             service.setNamespaceId(namespaceId);
@@ -470,14 +551,18 @@ public class ServiceManager implements RecordListener<Service> {
             // now validate the service. if failed, exception will be thrown
             service.setLastModifiedMillis(System.currentTimeMillis());
             service.recalculateChecksum();
+            // 设置集群对象
             if (cluster != null) {
                 cluster.setService(service);
                 service.getClusterMap().put(cluster.getName(), cluster);
             }
+            // 做一些名字格式的校验等
             service.validate();
 
+            // 将服务信息初始化
             putServiceAndInit(service);
             if (!local) {
+                // 非瞬时数据 代表需要基于CP 来实现 那么处理本次请求的就必须是leader 节点 这里尝试转发
                 addOrReplaceService(service);
             }
         }
@@ -492,9 +577,11 @@ public class ServiceManager implements RecordListener<Service> {
      * @param serviceName service name
      * @param instance    instance to register
      * @throws Exception any error occurred in the process
+     * 将某个服务实例注册到节点上
      */
     public void registerInstance(String namespaceId, String serviceName, Instance instance) throws NacosException {
 
+        // 如果本服务信息为空 先创建服务实例信息
         createEmptyService(namespaceId, serviceName, instance.isEphemeral());
 
         Service service = getService(namespaceId, serviceName);
@@ -504,6 +591,7 @@ public class ServiceManager implements RecordListener<Service> {
                 "service not found, namespace: " + namespaceId + ", service: " + serviceName);
         }
 
+        // 追加实例信息
         addInstance(namespaceId, serviceName, instance.isEphemeral(), instance);
     }
 
@@ -523,6 +611,14 @@ public class ServiceManager implements RecordListener<Service> {
         addInstance(namespaceId, serviceName, instance.isEphemeral(), instance);
     }
 
+    /**
+     * 将某个实例添加到对应的服务下
+     * @param namespaceId
+     * @param serviceName
+     * @param ephemeral
+     * @param ips
+     * @throws NacosException
+     */
     public void addInstance(String namespaceId, String serviceName, boolean ephemeral, Instance... ips) throws NacosException {
 
         String key = KeyBuilder.buildInstanceListKey(namespaceId, serviceName, ephemeral);
@@ -535,6 +631,7 @@ public class ServiceManager implements RecordListener<Service> {
             Instances instances = new Instances();
             instances.setInstanceList(instanceList);
 
+            // 更新当前实例信息    可以看到  基于AP 的实现有一个 同步请求的发送  将当前最新的实例信息发往其他节点  而基于CP 的实现则没有 只要确保在raft集群发送成功 即可
             consistencyService.put(key, instances);
         }
     }
@@ -547,6 +644,15 @@ public class ServiceManager implements RecordListener<Service> {
         }
     }
 
+    /**
+     * 移除某个服务实例
+     * @param namespaceId
+     * @param serviceName
+     * @param ephemeral
+     * @param service
+     * @param ips
+     * @throws NacosException
+     */
     public void removeInstance(String namespaceId, String serviceName, boolean ephemeral, Service service, Instance... ips) throws NacosException {
 
         String key = KeyBuilder.buildInstanceListKey(namespaceId, serviceName, ephemeral);
@@ -556,9 +662,19 @@ public class ServiceManager implements RecordListener<Service> {
         Instances instances = new Instances();
         instances.setInstanceList(instanceList);
 
+        // 实例发生变化 触发监听器 将数据返回给client
         consistencyService.put(key, instances);
     }
 
+    /**
+     * 按照一些标识信息找到某个服务提供者实例
+     * @param namespaceId
+     * @param serviceName
+     * @param cluster
+     * @param ip
+     * @param port
+     * @return
+     */
     public Instance getInstance(String namespaceId, String serviceName, String cluster, String ip, int port) {
         Service service = getService(namespaceId, serviceName);
         if (service == null) {
@@ -582,14 +698,26 @@ public class ServiceManager implements RecordListener<Service> {
         return null;
     }
 
+    /**
+     * 根据对应的action 选择增加实例或者更新实例
+     * @param service
+     * @param action
+     * @param ephemeral
+     * @param ips
+     * @return
+     * @throws NacosException
+     */
     public List<Instance> updateIpAddresses(Service service, String action, boolean ephemeral, Instance... ips) throws NacosException {
 
+        // 该对象下包含了某个服务所有实例
         Datum datum = consistencyService.get(KeyBuilder.buildInstanceListKey(service.getNamespaceId(), service.getName(), ephemeral));
 
+        // 获取该服务下所有实例信息
         List<Instance> currentIPs = service.allIPs(ephemeral);
         Map<String, Instance> currentInstances = new HashMap<>(currentIPs.size());
         Set<String> currentInstanceIds = Sets.newHashSet();
 
+        // 对应旧实例
         for (Instance instance : currentIPs) {
             currentInstances.put(instance.toIPAddr(), instance);
             currentInstanceIds.add(instance.getInstanceId());
@@ -604,6 +732,7 @@ public class ServiceManager implements RecordListener<Service> {
 
         for (Instance instance : ips) {
             if (!service.getClusterMap().containsKey(instance.getClusterName())) {
+                // 尝试创建集群  如果某个实例没有规定集群 会划到一个 默认的集群   该集群负责维护下面所有实例的心跳
                 Cluster cluster = new Cluster(instance.getClusterName(), service);
                 cluster.init();
                 service.getClusterMap().put(instance.getClusterName(), cluster);
@@ -632,6 +761,14 @@ public class ServiceManager implements RecordListener<Service> {
         return updateIpAddresses(service, UtilsAndCommons.UPDATE_INSTANCE_ACTION_REMOVE, ephemeral, ips);
     }
 
+    /**
+     * 在原有的基础上增加某个实例
+     * @param service
+     * @param ephemeral
+     * @param ips
+     * @return
+     * @throws NacosException
+     */
     public List<Instance> addIpAddresses(Service service, boolean ephemeral, Instance... ips) throws NacosException {
         return updateIpAddresses(service, UtilsAndCommons.UPDATE_INSTANCE_ACTION_ADD, ephemeral, ips);
     }
@@ -650,6 +787,12 @@ public class ServiceManager implements RecordListener<Service> {
         return instanceMap;
     }
 
+    /**
+     * 查看本地是否存在某个服务
+     * @param namespaceId
+     * @param serviceName
+     * @return
+     */
     public Service getService(String namespaceId, String serviceName) {
         if (serviceMap.get(namespaceId) == null) {
             return null;
@@ -669,12 +812,20 @@ public class ServiceManager implements RecordListener<Service> {
                 }
             }
         }
+        // 覆盖原来的service
         serviceMap.get(service.getNamespaceId()).put(service.getName(), service);
     }
 
+    /**
+     * 当 service 发生变化 或者首次加入时要进行更新
+     * @param service
+     * @throws NacosException
+     */
     private void putServiceAndInit(Service service) throws NacosException {
+        // 没有就添加 否则就覆盖
         putService(service);
         service.init();
+        // 为该服务注册2个监听器
         consistencyService.listen(KeyBuilder.buildInstanceListKey(service.getNamespaceId(), service.getName(), true), service);
         consistencyService.listen(KeyBuilder.buildInstanceListKey(service.getNamespaceId(), service.getName(), false), service);
         Loggers.SRV_LOG.info("[NEW-SERVICE] {}", service.toJSON());
@@ -809,6 +960,9 @@ public class ServiceManager implements RecordListener<Service> {
     }
 
 
+    /**
+     * 定时执行该任务
+     */
     private class EmptyServiceAutoClean implements Runnable {
 
         @Override
@@ -820,6 +974,7 @@ public class ServiceManager implements RecordListener<Service> {
 
             serviceMap.forEach((namespace, stringServiceMap) -> {
                 Stream<Map.Entry<String, Service>> stream = null;
+                // 超过一定的长度 允许使用并行流提高效率
                 if (stringServiceMap.size() > parallelSize) {
                     stream = stringServiceMap.entrySet().parallelStream();
                 } else {
@@ -828,15 +983,18 @@ public class ServiceManager implements RecordListener<Service> {
                 stream
                         .filter(entry -> {
                             final String serviceName = entry.getKey();
+                            // 过滤出当前还能提供的服务
                             return distroMapper.responsible(serviceName);
                         })
                         .forEach(entry -> stringServiceMap.computeIfPresent(entry.getKey(), (serviceName, service) -> {
+                            // 如果对应的 serviceName 下是一个空list
                     if (service.isEmpty()) {
 
                         // To avoid violent Service removal, the number of times the Service
                         // experiences Empty is determined by finalizeCnt, and if the specified
                         // value is reached, it is removed
 
+                        // 代表此时已满足移除条件
                         if (service.getFinalizeCount() > maxFinalizeCount) {
                             Loggers.SRV_LOG.warn("namespace : {}, [{}] services are automatically cleaned",
                                     namespace, serviceName);
@@ -848,11 +1006,13 @@ public class ServiceManager implements RecordListener<Service> {
                             }
                         }
 
+                        // 追加 isEmpty的次数
                         service.setFinalizeCount(service.getFinalizeCount() + 1);
 
                         Loggers.SRV_LOG.debug("namespace : {}, [{}] The number of times the current service experiences " +
                                 "an empty instance is : {}", namespace, serviceName, service.getFinalizeCount());
                     } else {
+                        // 如果重新发现了 服务提供者 那么重置 finalizeCount
                         service.setFinalizeCount(0);
                     }
                     return service;
@@ -861,12 +1021,16 @@ public class ServiceManager implements RecordListener<Service> {
         }
     }
 
+    /**
+     * 定期将本节点校验和发往其他节点
+     */
     private class ServiceReporter implements Runnable {
 
         @Override
         public void run() {
             try {
 
+                // 先找到当前提供的所有服务
                 Map<String, Set<String>> allServiceNames = getAllServiceNames();
 
                 if (allServiceNames.size() <= 0) {
@@ -876,28 +1040,35 @@ public class ServiceManager implements RecordListener<Service> {
 
                 for (String namespaceId : allServiceNames.keySet()) {
 
+                    // 生成一个校验和对象
                     ServiceChecksum checksum = new ServiceChecksum(namespaceId);
 
+                    // 找到对应的服务 如果当前服务已经不可用 直接返回
                     for (String serviceName : allServiceNames.get(namespaceId)) {
                         if (!distroMapper.responsible(serviceName)) {
                             continue;
                         }
 
+                        // 定位到服务对象
                         Service service = getService(namespaceId, serviceName);
 
                         if (service == null || service.isEmpty()) {
                             continue;
                         }
 
+                        // 重新计算校验和
                         service.recalculateChecksum();
 
+                        // 为 serviceChecksum 追加校验和属性
                         checksum.addItem(serviceName, service.getChecksum());
                     }
 
                     Message msg = new Message();
 
+                    // 把结果填充到message 中
                     msg.setData(JSON.toJSONString(checksum));
 
+                    // 判断集群中是否有其他server 没有就不需要发送同步请求了
                     List<Server> sameSiteServers = serverListManager.getServers();
 
                     if (sameSiteServers == null || sameSiteServers.size() <= 0) {
@@ -908,6 +1079,7 @@ public class ServiceManager implements RecordListener<Service> {
                         if (server.getKey().equals(NetUtils.localServer())) {
                             continue;
                         }
+                        // 借助同步器发送请求
                         synchronizer.send(server.getKey(), msg);
                     }
                 }
@@ -919,6 +1091,9 @@ public class ServiceManager implements RecordListener<Service> {
         }
     }
 
+    /**
+     * serviceKey 内部包含了标明某个service 的必备信息
+     */
     private static class ServiceKey {
         private String namespaceId;
         private String serviceName;

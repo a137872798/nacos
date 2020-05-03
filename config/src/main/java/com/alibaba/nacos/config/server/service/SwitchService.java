@@ -32,6 +32,7 @@ import static com.alibaba.nacos.config.server.utils.LogUtil.fatalLog;
  * Switch
  *
  * @author Nacos
+ * 开关服务
  */
 @Service
 public class SwitchService {
@@ -75,6 +76,10 @@ public class SwitchService {
         return StringUtils.isBlank(value) ? defaultValue : value;
     }
 
+    /**
+     * 通过传入一个长字符串进行初始化
+     * @param config
+     */
     public static void load(String config) {
         if (StringUtils.isBlank(config)) {
             fatalLog.error("switch config is blank.");
@@ -98,6 +103,7 @@ public class SwitchService {
 
                     map.put(key, value);
                 }
+                // 写时拷贝 避免看到不完全的容器
                 switches = map;
                 fatalLog.warn("[reload-switches] {}", getSwitches());
             }

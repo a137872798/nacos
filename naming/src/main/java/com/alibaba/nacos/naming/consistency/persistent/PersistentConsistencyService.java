@@ -28,6 +28,7 @@ import com.alibaba.nacos.naming.consistency.ConsistencyService;
  *
  * @author nkorange
  * @since 1.0.0
+ * 代表基于CP的实现 因为节点之间没有做定期同步 所以某个节点宕机时重启 要恢复数据需要消耗大量的时间和网络带宽 所以一般都会定期生成快照 (jraft中也有这一步 通过rocksDB做数据的持久化)
  */
 public interface PersistentConsistencyService extends ConsistencyService {
 }

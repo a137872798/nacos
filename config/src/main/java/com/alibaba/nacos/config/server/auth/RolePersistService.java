@@ -36,6 +36,7 @@ import static com.alibaba.nacos.config.server.utils.LogUtil.fatalLog;
  *
  * @author nkorange
  * @since 1.2.0
+ * 对应用户角色关联表
  */
 @Service
 public class RolePersistService extends PersistService {

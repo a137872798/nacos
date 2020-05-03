@@ -27,8 +27,12 @@ import java.util.Map;
  * AbstractConfigChangeParser
  *
  * @author rushsky518
+ * 配置解析器骨架类
  */
 public abstract class AbstractConfigChangeParser implements ConfigChangeParser {
+    /**
+     * 解析的文件类型
+     */
     private String configType;
 
     public AbstractConfigChangeParser(String configType) {
@@ -40,18 +44,28 @@ public abstract class AbstractConfigChangeParser implements ConfigChangeParser {
         return this.configType.equalsIgnoreCase(type);
     }
 
+    /**
+     *
+     * @param oldMap  代表旧配置
+     * @param newMap  代表新配置
+     * @return
+     */
     protected Map<String, ConfigChangeItem> filterChangeData(Map oldMap, Map newMap) {
         Map<String, ConfigChangeItem> result = new HashMap<String, ConfigChangeItem>(16);
         for (Iterator<Map.Entry<String, Object>> entryItr = oldMap.entrySet().iterator(); entryItr.hasNext();) {
             Map.Entry<String, Object> e = entryItr.next();
             ConfigChangeItem cci = null;
+            // 遍历所有旧的配置一旦发现新的配置包含相同的项
             if (newMap.containsKey(e.getKey()))  {
+                // 进行比较  相同则跳过
                 if (e.getValue().equals(newMap.get(e.getKey()))) {
                     continue;
                 }
+                // 发生变化 记录 Delete
                 cci = new ConfigChangeItem(e.getKey(), e.getValue().toString(), newMap.get(e.getKey()).toString());
                 cci.setType(PropertyChangeType.MODIFIED);
             } else {
+                // 在新配置中没有找到 代表该配置被删除
                 cci = new ConfigChangeItem(e.getKey(), e.getValue().toString(), null);
                 cci.setType(PropertyChangeType.DELETED);
             }
@@ -59,6 +73,7 @@ public abstract class AbstractConfigChangeParser implements ConfigChangeParser {
             result.put(e.getKey(), cci);
         }
 
+        // 记录新增的配置
         for (Iterator<Map.Entry<String, Object>> entryItr = newMap.entrySet().iterator(); entryItr.hasNext();) {
             Map.Entry<String, Object> e = entryItr.next();
             if (!oldMap.containsKey(e.getKey())) {

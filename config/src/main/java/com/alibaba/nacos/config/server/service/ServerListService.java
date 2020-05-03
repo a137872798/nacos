@@ -59,6 +59,10 @@ import static com.alibaba.nacos.core.utils.SystemUtils.*;
  * Serverlist service
  *
  * @author Nacos
+ * 该对象有2个任务 一个是监听当前集群下所有的服务器节点
+ * 还有一个是确保这些节点是可用的
+ * 而从client的角度来看就没有这么多问题 只要一个服务器列表 挨个访问 直到成功就可以了
+ * 而 服务器集群为了保证数据的一致性 需要确保其他服务器能正常访问
  */
 @Service
 public class ServerListService implements ApplicationListener<WebServerInitializedEvent> {
@@ -78,28 +82,36 @@ public class ServerListService implements ApplicationListener<WebServerInitializ
 
     @PostConstruct
     public void init() {
+        // 获取地址服务的url
         String envDomainName = System.getenv("address_server_domain");
         if (StringUtils.isBlank(envDomainName)) {
             domainName = System.getProperty("address.server.domain", "jmenv.tbsite.net");
         } else {
             domainName = envDomainName;
         }
+        // 获取当前节点的port信息
         String envAddressPort = System.getenv("address_server_port");
         if (StringUtils.isBlank(envAddressPort)) {
             addressPort = System.getProperty("address.server.port", "8080");
         } else {
             addressPort = envAddressPort;
         }
+        // 通过指定集群名称的方式 获取某个集群下所有服务器
         addressUrl = System.getProperty("address.server.url",
             servletContext.getContextPath() + "/" + RunningConfigUtils.getClusterName());
+        // 拼接完整的信息
         addressServerUrl = "http://" + domainName + ":" + addressPort + addressUrl;
+        // 生成环境url
         envIdUrl = "http://" + domainName + ":" + addressPort + "/env";
 
         defaultLog.info("ServerListService address-server port:" + addressPort);
         defaultLog.info("ADDRESS_SERVER_URL:" + addressServerUrl);
+        // 是否需要健康检查  默认为true
         isHealthCheck = PropertyUtil.isHealthCheck();
+        // 获取健康检查最大失败次数
         maxFailCount = PropertyUtil.getMaxHealthCheckFailCount();
         fatalLog.warn("useAddressServer:{}", isUseAddressServer);
+        // 定期更新集群内节点
         GetServerListTask task = new GetServerListTask();
         task.run();
         if (CollectionUtils.isEmpty(serverList)) {
@@ -139,7 +151,12 @@ public class ServerListService implements ApplicationListener<WebServerInitializ
     static public class ServerListChangeEvent implements EventDispatcher.Event {
     }
 
+    /**
+     * 该对象通过一个定时任务 定期访问 地址服务器 或者定时读取配置文件 读取当下集群所有server
+     * @param newList
+     */
     private void updateIfChanged(List<String> newList) {
+        // 代表与上次相比没有变化
         if (CollectionUtils.isEmpty(newList)||newList.equals(serverList)) {
             return;
         }
@@ -149,6 +166,7 @@ public class ServerListService implements ApplicationListener<WebServerInitializ
         if (isContainSelfIp) {
             isInIpList = true;
         } else {
+            // 强制追加本节点到集群中
             isInIpList = false;
             String selfAddr = getFormatServerAddr(LOCAL_IP);
             newList.add(selfAddr);
@@ -157,6 +175,7 @@ public class ServerListService implements ApplicationListener<WebServerInitializ
 
         serverList = new ArrayList<String>(newList);
 
+        // 如果某些节点已经不包含在集群内了 那么就从 unhealth中移除
         if(!serverListUnhealth.isEmpty()){
 
             List<String> unhealthyRemoved = serverListUnhealth.stream()
@@ -178,16 +197,19 @@ public class ServerListService implements ApplicationListener<WebServerInitializ
 
         /**
          * 非并发fireEvent
+         * 触发订阅 ChangeEvent的监听器   框架内部没有监听该事件的组件 由用户进行拓展
          */
         EventDispatcher.fireEvent(new ServerListChangeEvent());
     }
 
     /**
      * 保证不返回NULL
+     * 读取当前集群下所有节点地址
      *
      * @return serverlist
      */
     private List<String> getApacheServerList() {
+        // 如果是单机模式 只需要返回本节点ip
         if (STANDALONE_MODE) {
             List<String> serverIps = new ArrayList<String>();
             serverIps.add(getFormatServerAddr(LOCAL_IP));
@@ -197,7 +219,9 @@ public class ServerListService implements ApplicationListener<WebServerInitializ
         // 优先从文件读取服务列表
         try {
             List<String> serverIps = new ArrayList<String>();
+            // 读取集群配置文件     jraft 好像支持动态扩容   也就是为所有节点追加一个 server地址信息 同样要满足写入超过半数
             List<String> serverAddrLines = readClusterConf();
+
             if (!CollectionUtils.isEmpty(serverAddrLines)) {
                 for (String serverAddr : serverAddrLines) {
                     if (StringUtils.isNotBlank(serverAddr.trim())) {
@@ -212,6 +236,7 @@ public class ServerListService implements ApplicationListener<WebServerInitializ
             defaultLog.error("nacos-XXXX", "[serverlist] failed to get serverlist from disk!", e);
         }
 
+        // 如果不是从配置文件中读取 而是选择访问某个专用的地址服务器 (比如该服务器就是提供拉取集群地址的)
         if (isUseAddressServer()) {
             try {
                 HttpResult result = NotifyService.invokeURL(addressServerUrl, null, null);
@@ -219,6 +244,7 @@ public class ServerListService implements ApplicationListener<WebServerInitializ
                 if (HttpServletResponse.SC_OK == result.code) {
                     isAddressServerHealth = true;
                     addressServerFailCount = 0;
+                    // 读取结果并转换成地址信息
                     List<String> lines = IoUtils.readLines(new StringReader(result.content));
                     List<String> ips = new ArrayList<String>(lines.size());
                     for (String serverAddr : lines) {
@@ -251,6 +277,11 @@ public class ServerListService implements ApplicationListener<WebServerInitializ
         }
     }
 
+    /**
+     * 将配置文件中的服务器地址 格式化成 ip + port 的形式
+     * @param serverAddr
+     * @return
+     */
     private String getFormatServerAddr(String serverAddr) {
         if (StringUtils.isBlank(serverAddr)) {
             throw new IllegalArgumentException("invalid serverlist");
@@ -277,6 +308,9 @@ public class ServerListService implements ApplicationListener<WebServerInitializ
         }
     }
 
+    /**
+     * 检测集群内其他节点能否正常访问
+     */
     private void checkServerHealth() {
         long startCheckTime = System.currentTimeMillis();
         for (String serverIp : serverList) {
@@ -291,6 +325,9 @@ public class ServerListService implements ApplicationListener<WebServerInitializ
         defaultLog.debug("checkServerHealth cost: {}", cost);
     }
 
+    /**
+     * 处理其他节点健康状态的回调
+     */
     class AsyncCheckServerHealthCallBack implements FutureCallback<HttpResponse> {
 
         private String serverIp;
@@ -301,8 +338,10 @@ public class ServerListService implements ApplicationListener<WebServerInitializ
 
         @Override
         public void completed(HttpResponse response) {
+            // 代表可用 从 unhealth列表中移除  看来能正常访问到就认为是健康实例  及时对应的 database不可用
             if (response.getStatusLine().getStatusCode() == HttpServletResponse.SC_OK) {
                 serverListUnhealth.remove(serverIp);
+                // 这是 apache相关的清理 先不管
                 HttpClientUtils.closeQuietly(response);
             }
         }
@@ -320,6 +359,7 @@ public class ServerListService implements ApplicationListener<WebServerInitializ
         private void computeFailCount() {
             int failCount = serverIp2unhealthCount.compute(serverIp,(key,oldValue)->oldValue == null?1:oldValue+1);
             if (failCount > maxFailCount) {
+                // 超过最大次数后加入不可用名单
                 if (!serverListUnhealth.contains(serverIp)) {
                     serverListUnhealth.add(serverIp);
                 }
@@ -368,13 +408,20 @@ public class ServerListService implements ApplicationListener<WebServerInitializ
     static final int TIMEOUT = 5000;
     private int maxFailCount = 12;
     private static volatile List<String> serverList = new ArrayList<String>();
-    private static volatile List<String> serverListUnhealth = Collections.synchronizedList(new ArrayList<String>());;
+    /**
+     * 当前无法被访问的服务实例
+     */
+    private static volatile List<String> serverListUnhealth = Collections.synchronizedList(new ArrayList<String>());
+    /**
+     * 标记当前集群服务是否可用
+     */
     private static volatile boolean isAddressServerHealth = true;
     private static volatile int addressServerFailCount = 0;
     private static volatile boolean isInIpList = true;
 
     /**
      * ip unhealth count
+     * 记录某个serviceIp 的失败次数
      */
     private static  Map<String, Integer> serverIp2unhealthCount = new ConcurrentHashMap<>();
     private RequestConfig requestConfig = RequestConfig.custom()
@@ -389,9 +436,16 @@ public class ServerListService implements ApplicationListener<WebServerInitializ
     public String addressPort;
     public String addressUrl;
     public String envIdUrl;
+    /**
+     * 地址服务器的  url
+     */
     public String addressServerUrl;
     private boolean isHealthCheck = true;
 
+    /**
+     * 当服务器启动时 开始检测其他server能否正常访问了
+     * @param event
+     */
     @Override
     public void onApplicationEvent(WebServerInitializedEvent event) {
         if (port == 0) {
@@ -402,7 +456,9 @@ public class ServerListService implements ApplicationListener<WebServerInitializ
             }
             setServerList(new ArrayList<String>(newList));
         }
+        // 启动apache.httpClient
         httpclient.start();
+        // 定时触发心跳任务
         CheckServerHealthTask checkServerHealthTask = new CheckServerHealthTask();
         TimerTaskService.scheduleWithFixedDelay(checkServerHealthTask, 0L, 5L, TimeUnit.SECONDS);
 

@@ -64,6 +64,10 @@ public class HealthController {
     @Autowired
     private PushService pushService;
 
+    /**
+     * 这是心跳检测对外暴露的端点
+     * @return
+     */
     @RequestMapping("/server")
     public JSONObject server() {
         JSONObject result = new JSONObject();

@@ -58,7 +58,8 @@ import static com.alibaba.nacos.config.server.utils.LogUtil.fatalLog;
 
 /**
  * 数据库服务，提供ConfigInfo在数据库的存取<br> 3.0开始增加数据版本号, 并将物理删除改为逻辑删除<br> 3.0增加数据库切换功能
- *
+ * 作为持久化基类  比如UserPersistService 是该类的子类
+ * 该对象负责配置相关的持久化处理
  * @author boyan
  * @author leiwen.zh
  * @since 1.0
@@ -67,14 +68,30 @@ import static com.alibaba.nacos.config.server.utils.LogUtil.fatalLog;
 @Repository
 public class PersistService {
 
+    /**
+     * 该对象会根据当前的模式 返回不同的 dataSourceService  也就是把选择的逻辑内聚到该对象中 而不是直接在持久化服务中包含这段逻辑
+     * 通过该对象可以获取到可用的数据源
+     */
     @Autowired
     private DynamicDataSource dynamicDataSource;
 
+    /**
+     * 对应从 DynamicDataSource 获取的数据源
+     */
     private DataSourceService dataSourceService;
 
+    /**
+     * 对应 从 config_info 表读取数据的逻辑 同时 配置本身是一个非结构化数据 (content长字符串)
+     * 这是一个sql模板 通过dataId等一系列标识能够定位到某个具体的配置项  至于配置的内容都包含在content中
+     */
     private static final String SQL_FIND_ALL_CONFIG_INFO = "select id,data_id,group_id,tenant_id,app_name,content,type,md5,gmt_create,gmt_modified,src_user,src_ip,c_desc,c_use,effect,c_schema from config_info";
 
+    /**
+     * 查询租户总数
+     */
     private static final String SQL_TENANT_INFO_COUNT_BY_TENANT_ID = "select count(1) from tenant_info where tenant_id = ?";
+
+    // 都是一些前缀
 
     private static final String SQL_FIND_CONFIG_INFO_BY_IDS = "SELECT ID,data_id,group_id,tenant_id,app_name,content,md5 FROM config_info WHERE ";
 
@@ -88,12 +105,18 @@ public class PersistService {
 
     @PostConstruct
     public void init() {
+        // 通过动态数据源 分配合适的数据源对象
         dataSourceService = dynamicDataSource.getDataSource();
 
+        // 获取相关的 执行模板
         jt = getJdbcTemplate();
         tjt = getTransactionTemplate();
     }
 
+    /**
+     * 判断主节点是否允许写入数据
+     * @return
+     */
     public boolean checkMasterWritable() {
         return dataSourceService.checkMasterWritable();
     }
@@ -102,6 +125,10 @@ public class PersistService {
         this.dataSourceService = dataSourceService;
     }
 
+
+    // 几个 RowMapper先不看
+
+    // 该对象负责将 数据库字段转换成 DO
     static final class ConfigInfoWrapperRowMapper implements
         RowMapper<ConfigInfoWrapper> {
         @Override
@@ -312,6 +339,9 @@ public class PersistService {
         }
     }
 
+    /**
+     * 该对象负责将 config_info_beta 表的字段转换成实体对象
+     */
     static final class ConfigInfo4BetaRowMapper implements
         RowMapper<ConfigInfo4Beta> {
         @Override
@@ -486,6 +516,7 @@ public class PersistService {
 
     /**
      * 单元测试用
+     * 对应 主从dataSource 的 master
      */
     public JdbcTemplate getJdbcTemplate() {
         return this.dataSourceService.getJdbcTemplate();
@@ -503,6 +534,10 @@ public class PersistService {
 
     /**
      * 添加普通配置信息，发布数据变更事件
+     * @param srcIp  尝试添加配置的客户端ip
+     * @param srcUser  当前登录的用户 也就是添加配置还需要在client端做权限认证  通过的才允许添加配置
+     * @param configInfo  本次插入的配置信息
+     * @param configAdvanceInfo 这是啥意思???
      */
     public void addConfigInfo(final String srcIp, final String srcUser, final ConfigInfo configInfo,
                               final Timestamp time, final Map<String, Object> configAdvanceInfo, final boolean notify) {
@@ -602,6 +637,7 @@ public class PersistService {
                     if (configTags != null) {
                         // 删除所有tag，然后再重新创建
                         removeTagByIdAtomic(oldConfigInfo.getId());
+                        // 重新添加标签
                         addConfiTagsRelationAtomic(oldConfigInfo.getId(), configTags, configInfo.getDataId(),
                             configInfo.getGroup(), configInfo.getTenant());
                     }
@@ -710,6 +746,7 @@ public class PersistService {
 
     /**
      * 写入主表，插入或更新
+     * 插入/更新的同时发布一个本地 配置修改的事件
      */
     public void insertOrUpdate(String srcIp, String srcUser, ConfigInfo configInfo, Timestamp time,
                                Map<String, Object> configAdvanceInfo, boolean notify) {

@@ -49,16 +49,23 @@ import java.util.*;
  * This class inherits from Service in API module and stores some fields that do not have to expose to client.
  *
  * @author nkorange
+ * 一个service 可以对应多个cluster  一个cluster 可以对应多个instance
+ * 每个 service 又是有关instances的监听器 应该是通过心跳机制检测到某个服务实例下线 进而触发监听器 更新service内部的数据 ServiceManager 作为 Service层的监听器 当某个service
+ * 无效时 将service 从nacos Server中移除
  */
 public class Service extends com.alibaba.nacos.api.naming.pojo.Service implements Record, RecordListener<Instances> {
 
     private static final String SERVICE_NAME_SYNTAX = "[0-9a-zA-Z@\\.:_-]+";
 
+    /**
+     * 推测是负责与 service 下所有 cluster 下所有 instance 维持心跳
+     */
     @JSONField(serialize = false)
     private ClientBeatCheckTask clientBeatCheckTask = new ClientBeatCheckTask(this);
 
     /**
      * Identify the information used to determine how many isEmpty judgments the service has experienced
+     * serviceManager 下有一个定时清理无效service的任务 每次检测到对应service下没有提供者 会为该值+1 直到超过一个限定值时 才真正做清理工作
      */
     private int finalizeCount = 0;
 
@@ -83,6 +90,9 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
      */
     private long pushCacheMillis = 0L;
 
+    /**
+     * 一个服务本身可以由多个 集群来提供
+     */
     private Map<String, Cluster> clusterMap = new HashMap<>();
 
     public Service() {
@@ -105,6 +115,10 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
         this.ipDeleteTimeout = ipDeleteTimeout;
     }
 
+    /**
+     * 将集群下 rsInfo内包含的实例信息设置成 isHealth = true
+     * @param rsInfo
+     */
     public void processClientBeat(final RsInfo rsInfo) {
         ClientBeatProcessor clientBeatProcessor = new ClientBeatProcessor();
         clientBeatProcessor.setService(this);
@@ -154,11 +168,18 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
         return KeyBuilder.matchInstanceListKey(key, namespaceId, getName());
     }
 
+    /**
+     * service 作为监听器负责监听下面实例的变化
+     * @param key   target key
+     * @param value data of the key   能够提供该服务的实例信息 注意 service 下先是一个 cluster 在此之下 才是instance
+     * @throws Exception
+     */
     @Override
     public void onChange(String key, Instances value) throws Exception {
 
         Loggers.SRV_LOG.info("[NACOS-RAFT] datum is changed, key: {}, value: {}", key, value);
 
+        // 修正异常的instance 信息
         for (Instance instance : value.getInstanceList()) {
 
             if (instance == null) {
@@ -175,6 +196,7 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
             }
         }
 
+        // 更新所有实例信息  内部还会触发 pushService.serviceChanged
         updateIPs(value.getInstanceList(), KeyBuilder.matchEphemeralInstanceListKey(key));
 
         recalculateChecksum();
@@ -185,6 +207,10 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
         // ignore
     }
 
+    /**
+     * 找到所有 健康实例
+     * @return
+     */
     public int healthyInstanceCount() {
 
         int healthyCount = 0;
@@ -200,7 +226,13 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
         return (healthyInstanceCount() * 1.0 / allIPs().size()) <= getProtectThreshold();
     }
 
+    /**
+     *
+     * @param instances  这里是所有实例 还要按照集群来划分
+     * @param ephemeral  代表本次更新的实例是  瞬时实例还是持久实例
+     */
     public void updateIPs(Collection<Instance> instances, boolean ephemeral) {
+        // 清空之前按集群划分的 实例组   这里使用写时拷贝 所以没有加锁操作
         Map<String, List<Instance>> ipMap = new HashMap<>(clusterMap.size());
         for (String clusterName : clusterMap.keySet()) {
             ipMap.put(clusterName, new ArrayList<>());
@@ -213,14 +245,17 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
                     continue;
                 }
 
+                // 当某个服务实例没有标记所在集群时 使用默认集群
                 if (StringUtils.isEmpty(instance.getClusterName())) {
                     instance.setClusterName(UtilsAndCommons.DEFAULT_CLUSTER_NAME);
                 }
 
+                // 发现新集群的实例时 初始化并添加到 集群容器中
                 if (!clusterMap.containsKey(instance.getClusterName())) {
                     Loggers.SRV_LOG.warn("cluster: {} not found, ip: {}, will create new cluster with default configuration.",
                         instance.getClusterName(), instance.toJSON());
                     Cluster cluster = new Cluster(instance.getClusterName(), this);
+                    // 按照集群为单位进行初始化  就是启动心跳对象并维护下面所有实例的心跳状态
                     cluster.init();
                     getClusterMap().put(instance.getClusterName(), cluster);
                 }
@@ -231,12 +266,14 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
                     ipMap.put(instance.getClusterName(), clusterIPs);
                 }
 
+                // 添加实例
                 clusterIPs.add(instance);
             } catch (Exception e) {
                 Loggers.SRV_LOG.error("[NACOS-DOM] failed to process ip: " + instance, e);
             }
         }
 
+        // ipMap 最后会将 本次所有实例分组   传入的instances 代表全量更新
         for (Map.Entry<String, List<Instance>> entry : ipMap.entrySet()) {
             //make every ip mine
             List<Instance> entryIPs = entry.getValue();
@@ -244,6 +281,7 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
         }
 
         setLastModifiedMillis(System.currentTimeMillis());
+        // 代表某个服务下实例发生了变化 需要通知到client
         getPushService().serviceChanged(this);
         StringBuilder stringBuilder = new StringBuilder();
 
@@ -256,10 +294,15 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
 
     }
 
+    /**
+     * 当某个服务实例被创建时 需要进行初始化工作
+     */
     public void init() {
 
+        // 执行心跳检测任务   应该就是往服务下 所有集群的所有 instance 发送心跳包
         HealthCheckReactor.scheduleCheck(clientBeatCheckTask);
 
+        // 挨个初始化cluster
         for (Map.Entry<String, Cluster> entry : clusterMap.entrySet()) {
             entry.getValue().setService(this);
             entry.getValue().init();
@@ -406,6 +449,10 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
         this.namespaceId = namespaceId;
     }
 
+    /**
+     * 更新当前服务实例信息
+     * @param vDom
+     */
     public void update(Service vDom) {
 
         if (!StringUtils.equals(token, vDom.getToken())) {
@@ -454,6 +501,9 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
         return checksum;
     }
 
+    /**
+     * 计算校验和
+     */
     public synchronized void recalculateChecksum() {
         List<Instance> ips = allIPs();
 

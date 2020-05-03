@@ -36,6 +36,7 @@ import java.util.concurrent.TimeUnit;
  *
  * @author nkorange
  * @since 1.2.0
+ * 该对象是专门用于更新安全信息的
  */
 public class SecurityProxy {
 
@@ -43,7 +44,12 @@ public class SecurityProxy {
 
     private static final String LOGIN_URL = "/v1/auth/users/login";
 
+    /**
+     * 代表应用路径  在后面追加 Login_url
+     */
     private String contextPath;
+
+    // 指定用户名密码
 
     /**
      * User's name
@@ -57,11 +63,13 @@ public class SecurityProxy {
 
     /**
      * A token to take with when sending request to Nacos server
+     * 访问 nacos server 时 需要携带一个 accessToken
      */
     private String accessToken;
 
     /**
      * TTL of token in seconds
+     * 代表token有效时长
      */
     private long tokenTtl;
 
@@ -72,6 +80,7 @@ public class SecurityProxy {
 
     /**
      * time window to refresh security info in seconds
+     * 多久更新一次安全层信息
      */
     private long tokenRefreshWindow;
 
@@ -79,6 +88,7 @@ public class SecurityProxy {
      * Construct from properties, keeping flexibility
      *
      * @param properties a bunch of properties to read
+     *
      */
     public SecurityProxy(Properties properties) {
         username = properties.getProperty(PropertyKeyConst.USERNAME, StringUtils.EMPTY);
@@ -87,6 +97,11 @@ public class SecurityProxy {
         contextPath = contextPath.startsWith("/") ? contextPath : "/" + contextPath;
     }
 
+    /**
+     * 指定一组服务地址 并进行登录
+     * @param servers
+     * @return
+     */
     public boolean login(List<String> servers) {
 
         try {
@@ -95,6 +110,7 @@ public class SecurityProxy {
             }
 
             for (String server : servers) {
+                // 当更新成功时  刷新lastRefreshTime
                 if (login(server)) {
                     lastRefreshTime = System.currentTimeMillis();
                     return true;
@@ -106,6 +122,11 @@ public class SecurityProxy {
         return false;
     }
 
+    /**
+     * 登录到某个服务器
+     * @param server
+     * @return
+     */
     public boolean login(String server) {
 
         if (StringUtils.isNotBlank(username)) {
@@ -118,6 +139,7 @@ public class SecurityProxy {
                 url = server + contextPath + LOGIN_URL;
             }
 
+            // 将参数携带在请求头上并发起 http请求
             HttpClient.HttpResult result = HttpClient.request(url, new ArrayList<String>(2),
                 params, body, Charsets.UTF_8.name(), HttpMethod.POST);
 
@@ -126,6 +148,7 @@ public class SecurityProxy {
                 return false;
             }
 
+            // 登录成功时 获取accessToken
             JSONObject obj = JSON.parseObject(result.content);
             if (obj.containsKey(Constants.ACCESS_TOKEN)) {
                 accessToken = obj.getString(Constants.ACCESS_TOKEN);

@@ -36,6 +36,7 @@ import static com.alibaba.nacos.config.server.utils.LogUtil.fatalLog;
  *
  * @author nkorange
  * @since 1.2.0
+ * 针对用户持久化服务  权限认证相关  也就是这个配置中心还需要做认证才可以访问
  */
 @Service
 public class UserPersistService extends PersistService {
@@ -113,6 +114,9 @@ public class UserPersistService extends PersistService {
         }
     }
 
+    /**
+     * 该对象负责 rs的映射
+     */
     private static final class UserRowMapper implements
         RowMapper<User> {
         @Override

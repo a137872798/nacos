@@ -34,13 +34,24 @@ import static com.alibaba.nacos.client.utils.LogUtils.NAMING_LOGGER;
 
 /**
  * @author harold
+ * 该对象负责 服务注册的续约功能  因为基于AP的实现 无法确保强写入  一旦写入的节点宕机了 那么数据就丢失了
+ * 首次注册相当于开启了一个任务  会定期去判断目标节点上是否还存在服务实例信息 不在了就重新注册 否则进行续约
  */
 public class BeatReactor {
 
+    /**
+     * 定时器
+     */
     private ScheduledExecutorService executorService;
 
+    /**
+     * 该对象负责与 命名服务通信
+     */
     private NamingProxy serverProxy;
 
+    /**
+     * 是否开启轻量级心跳
+     */
     private boolean lightBeatEnabled = false;
 
     public final Map<String, BeatInfo> dom2Beat = new ConcurrentHashMap<String, BeatInfo>();
@@ -49,6 +60,10 @@ public class BeatReactor {
         this(serverProxy, UtilAndComs.DEFAULT_CLIENT_BEAT_THREAD_COUNT);
     }
 
+    /**
+     * @param serverProxy
+     * @param threadCount
+     */
     public BeatReactor(NamingProxy serverProxy, int threadCount) {
         this.serverProxy = serverProxy;
         executorService = new ScheduledThreadPoolExecutor(threadCount, new ThreadFactory() {
@@ -62,11 +77,17 @@ public class BeatReactor {
         });
     }
 
+    /**
+     * 监控某个实例是否还存在与注册中心
+     * @param serviceName
+     * @param beatInfo
+     */
     public void addBeatInfo(String serviceName, BeatInfo beatInfo) {
         NAMING_LOGGER.info("[BEAT] adding beat: {} to beat map.", beatInfo);
+        // 通过提供的服务类型  节点信息 生成key
         String key = buildKey(serviceName, beatInfo.getIp(), beatInfo.getPort());
         BeatInfo existBeat = null;
-        //fix #1733
+        //fix #1733  先停止之前的心跳
         if ((existBeat = dom2Beat.remove(key)) != null) {
             existBeat.setStopped(true);
         }
@@ -90,6 +111,9 @@ public class BeatReactor {
             + ip + Constants.NAMING_INSTANCE_ID_SPLITTER + port;
     }
 
+    /**
+     * 确保实例注册到注册中心 要定期进行续约
+     */
     class BeatTask implements Runnable {
 
         BeatInfo beatInfo;
@@ -100,12 +124,15 @@ public class BeatReactor {
 
         @Override
         public void run() {
+            // 代表该任务已经被停止  (或移除 或覆盖)
             if (beatInfo.isStopped()) {
                 return;
             }
             long nextTime = beatInfo.getPeriod();
             try {
+                // 检测提供者能否正常工作
                 JSONObject result = serverProxy.sendBeat(beatInfo, BeatReactor.this.lightBeatEnabled);
+                // 推荐的下次心跳时间
                 long interval = result.getIntValue("clientBeatInterval");
                 boolean lightBeatEnabled = false;
                 if (result.containsKey(CommonParams.LIGHT_BEAT_ENABLED)) {
@@ -119,6 +146,7 @@ public class BeatReactor {
                 if (result.containsKey(CommonParams.CODE)) {
                     code = result.getIntValue(CommonParams.CODE);
                 }
+                // 当收到该标识时代表 虽然准备对该实例进行续约 但是注册中心上并不包含该实例信息 所以要重新注册
                 if (code == NamingResponseCode.RESOURCE_NOT_FOUND) {
                     Instance instance = new Instance();
                     instance.setPort(beatInfo.getPort());
@@ -128,13 +156,15 @@ public class BeatReactor {
                     instance.setClusterName(beatInfo.getCluster());
                     instance.setServiceName(beatInfo.getServiceName());
                     instance.setInstanceId(instance.getInstanceId());
-                    instance.setEphemeral(true);
+                    instance.setEphemeral(true); // 瞬时实例代表通过 client 定期续约来确保服务实例存活  而不是通过持久化的方式
                     try {
+                        // 重新发起一次注册请求
                         serverProxy.registerService(beatInfo.getServiceName(),
                             NamingUtils.getGroupName(beatInfo.getServiceName()), instance);
                     } catch (Exception ignore) {
                     }
                 }
+                // 续约本身失败的情况下  尝试下一轮继续续约
             } catch (NacosException ne) {
                 NAMING_LOGGER.error("[CLIENT-BEAT] failed to send beat: {}, code: {}, msg: {}",
                     JSON.toJSONString(beatInfo), ne.getErrCode(), ne.getErrMsg());

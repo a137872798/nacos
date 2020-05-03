@@ -25,14 +25,19 @@ import org.codehaus.jackson.util.VersionUtil;
  */
 public class ClientInfo {
     public Version version = Version.unknownVersion();
+    /**
+     * 标记了客户端类型
+     */
     public ClientType type = ClientType.UNKNOWN;
 
+    // 根据 userAgent 信息抽取成 ClientInfo 对象
     public ClientInfo(String userAgent) {
         String versionStr = StringUtils.isEmpty(userAgent) ? StringUtils.EMPTY : userAgent;
 
         if (versionStr.startsWith(ClientTypeDescription.JAVA_CLIENT)) {
             type = ClientType.JAVA;
 
+            // 截取 :v 后面的内容
             versionStr = versionStr.substring(versionStr.indexOf(":v") + 2, versionStr.length());
             version = VersionUtil.parseVersion(versionStr);
 
@@ -108,6 +113,9 @@ public class ClientInfo {
         this.version = Version.unknownVersion();
     }
 
+    /**
+     * 代表客户端是基于哪种语言写的
+     */
     public enum ClientType {
         /**
          * Go client type

@@ -30,6 +30,7 @@ import java.util.concurrent.*;
  * Notify Single server
  *
  * @author Nacos
+ * 用于通知某个服务器的 service
  */
 public class NotifySingleService {
 
@@ -50,6 +51,9 @@ public class NotifySingleService {
         }
     }
 
+    /**
+     * 对应某个单节点
+     */
     static class NotifySingleTask extends NotifyTask implements Runnable {
         private static final NotifyTaskProcessorWrapper PROCESSOR = new NotifyTaskProcessorWrapper();
         private final Executor executor;

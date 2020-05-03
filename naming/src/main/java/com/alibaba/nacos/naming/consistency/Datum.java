@@ -20,6 +20,7 @@ import com.alibaba.nacos.naming.pojo.Record;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
+ * 代表一个数据体  包含 kv
  * @author nacos
  */
 public class Datum<T extends Record> {
@@ -28,5 +29,8 @@ public class Datum<T extends Record> {
 
     public T value;
 
+    /**
+     * 更像是版本号的概念
+     */
     public AtomicLong timestamp = new AtomicLong(0L);
 }

@@ -40,15 +40,25 @@ import java.util.stream.Collectors;
 /**
  * @author Nicholas
  * @since 1.0.1
+ * 该对象负责管理所有的订阅者
  */
 @Service
 public class SubscribeManager {
 
+    /**
+     * 请求路径
+     */
     private static final String SUBSCRIBER_ON_SYNC_URL = "/service/subscribers";
 
+    /**
+     * 该对象负责将最新数据推送到订阅者
+     */
     @Autowired
     private PushService pushService;
 
+    /**
+     * 服务实例监听器
+     */
     @Autowired
     private ServerListManager serverListManager;
 
@@ -71,12 +81,13 @@ public class SubscribeManager {
     public List<Subscriber> getSubscribers(String serviceName, String namespaceId, boolean aggregation) throws InterruptedException {
         if (aggregation) {
             // size = 1 means only myself in the list, we need at least one another server alive:
+            // 模糊查找实际上在这里就是 like查找 比如 **服务.startWith(serviceName)
             if (serverListManager.getHealthyServers().size() <= 1) {
                 return getSubscribersFuzzy(serviceName, namespaceId);
             }
 
             List<Subscriber> subscriberList = new ArrayList<Subscriber>();
-            // try sync data from remote server:
+            // try sync data from remote server:   先遍历所有健康实例
             for (Server server : serverListManager.getHealthyServers()) {
 
                 Map<String, String> paramValues = new HashMap<>(128);
@@ -88,6 +99,7 @@ public class SubscribeManager {
                     continue;
                 }
 
+                // 找到目标服务端点进行访问 并将结果填充到 sub列表
                 HttpClient.HttpResult result = HttpClient.httpGet("http://" + server.getKey() + RunningConfig.getContextPath()
                     + UtilsAndCommons.NACOS_NAMING_CONTEXT + SUBSCRIBER_ON_SYNC_URL, new ArrayList<>(), paramValues);
 

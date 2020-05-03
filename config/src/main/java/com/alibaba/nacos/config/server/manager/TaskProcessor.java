@@ -17,6 +17,7 @@ package com.alibaba.nacos.config.server.manager;
 
 /**
  * task processor
+ * 任务处理器
  *
  * @author Nacos
  */
@@ -24,8 +25,8 @@ public interface TaskProcessor {
     /**
      * process task
      *
-     * @param taskType task type
-     * @param task     task
+     * @param taskType task type    任务类型
+     * @param task     task         待处理的任务
      * @return process task result
      */
     boolean process(String taskType, AbstractTask task);

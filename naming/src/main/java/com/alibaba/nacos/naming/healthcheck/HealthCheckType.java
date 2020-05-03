@@ -24,6 +24,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * @author nkorange
+ * 基于什么方式进行心跳检测
  */
 public enum HealthCheckType {
     /**

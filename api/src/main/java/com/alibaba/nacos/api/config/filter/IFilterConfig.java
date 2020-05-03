@@ -19,6 +19,7 @@ package com.alibaba.nacos.api.config.filter;
  * Filter Config Interface
  *
  * @author Nacos
+ * 过滤器配置
  */
 public interface IFilterConfig {
 
@@ -26,6 +27,7 @@ public interface IFilterConfig {
      * get filter name
      *
      * @return
+     * 该过滤器的名称
      */
     String getFilterName();
 
@@ -34,6 +36,7 @@ public interface IFilterConfig {
      *
      * @param name
      * @return param
+     * 过滤器 允许携带一些参数
      */
     Object getInitParameter(String name);
 

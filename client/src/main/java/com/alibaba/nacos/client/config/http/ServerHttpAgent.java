@@ -50,11 +50,15 @@ import java.util.concurrent.*;
  * Server Agent
  *
  * @author water.lyl
+ * 该对象 通过 http协议 与 nacos server 通信
  */
 public class ServerHttpAgent implements HttpAgent {
 
     private static final Logger LOGGER = LogUtils.logger(ServerHttpAgent.class);
 
+    /**
+     * 对传输数据进行加密 确保安全
+     */
     private SecurityProxy securityProxy;
 
     private String namespaceId;
@@ -75,26 +79,31 @@ public class ServerHttpAgent implements HttpAgent {
                               long readTimeoutMs) throws IOException {
         final long endTime = System.currentTimeMillis() + readTimeoutMs;
         final boolean isSSL = false;
+        // 给参数设置额外的 权限相关信息
         injectSecurityInfo(paramValues);
+        // 一开始可以选择多个 服务器 这里是随机获取一个
         String currentServerAddr = serverListMgr.getCurrentServerAddr();
         int maxRetry = this.maxRetry;
 
         do {
             try {
+                // 这啥 spas 反正也是一种角色校验的 先不管
                 List<String> newHeaders = getSpasHeaders(paramValues);
                 if (headers != null) {
                     newHeaders.addAll(headers);
                 }
+                // 使用 HttpSimpleClient对象发起请求
                 HttpResult result = HttpSimpleClient.httpGet(
                     getUrl(currentServerAddr, path), newHeaders, paramValues, encoding,
                     readTimeoutMs, isSSL);
+                // 代表出现异常 只是打印日志
                 if (result.code == HttpURLConnection.HTTP_INTERNAL_ERROR
                     || result.code == HttpURLConnection.HTTP_BAD_GATEWAY
                     || result.code == HttpURLConnection.HTTP_UNAVAILABLE) {
                     LOGGER.error("[NACOS ConnectException] currentServerAddr: {}, httpCode: {}",
                         serverListMgr.getCurrentServerAddr(), result.code);
                 } else {
-                    // Update the currently available server addr
+                    // Update the currently available server addr 更新成可用的地址
                     serverListMgr.updateCurrentServerAddr(currentServerAddr);
                     return result;
                 }
@@ -107,6 +116,7 @@ public class ServerHttpAgent implements HttpAgent {
                 throw ioe;
             }
 
+            // 失败时尝试更换nacos server地址后进行重试
             if (serverListMgr.getIterator().hasNext()) {
                 currentServerAddr = serverListMgr.getIterator().next();
             } else {
@@ -114,6 +124,7 @@ public class ServerHttpAgent implements HttpAgent {
                 if (maxRetry < 0) {
                     throw new ConnectException("[NACOS HTTP-GET] The maximum number of tolerable server reconnection errors has been reached");
                 }
+                // 代表已经遍历到尾部了 那么就从头开始遍历 (内部会重新创建一个迭代器)
                 serverListMgr.refreshCurrentServerAddr();
             }
 
@@ -123,12 +134,23 @@ public class ServerHttpAgent implements HttpAgent {
         throw new ConnectException("no available server");
     }
 
+    /**
+     * 发送post请求
+     * @param path http path
+     * @param headers http headers
+     * @param paramValues http paramValues http
+     * @param encoding http encode
+     * @param readTimeoutMs http timeout
+     * @return
+     * @throws IOException
+     */
     @Override
     public HttpResult httpPost(String path, List<String> headers, List<String> paramValues, String encoding,
                                long readTimeoutMs) throws IOException {
         final long endTime = System.currentTimeMillis() + readTimeoutMs;
         boolean isSSL = false;
         injectSecurityInfo(paramValues);
+        // 这里只会发往单个节点  那么写入成功但是同步失败怎么办
         String currentServerAddr = serverListMgr.getCurrentServerAddr();
         int maxRetry = this.maxRetry;
 
@@ -140,6 +162,7 @@ public class ServerHttpAgent implements HttpAgent {
                     newHeaders.addAll(headers);
                 }
 
+                // 这里获取 传输层的结果
                 HttpResult result = HttpSimpleClient.httpPost(
                     getUrl(currentServerAddr, path), newHeaders, paramValues, encoding,
                     readTimeoutMs, isSSL);
@@ -150,6 +173,7 @@ public class ServerHttpAgent implements HttpAgent {
                         currentServerAddr, result.code);
                 } else {
                     // Update the currently available server addr
+                    // 这里是考虑到重试的情况 当前服务器地址已经发生变更
                     serverListMgr.updateCurrentServerAddr(currentServerAddr);
                     return result;
                 }
@@ -162,6 +186,7 @@ public class ServerHttpAgent implements HttpAgent {
                 throw ioe;
             }
 
+            // 非io失败 尝试更换服务器地址 并重试
             if (serverListMgr.getIterator().hasNext()) {
                 currentServerAddr = serverListMgr.getIterator().next();
             } else {
@@ -231,6 +256,12 @@ public class ServerHttpAgent implements HttpAgent {
         throw new ConnectException("no available server");
     }
 
+    /**
+     * 拼接url
+     * @param serverAddr
+     * @param relativePath
+     * @return
+     */
     private String getUrl(String serverAddr, String relativePath) {
         String contextPath = serverListMgr.getContentPath().startsWith("/") ?
                 serverListMgr.getContentPath() : "/" + serverListMgr.getContentPath();
@@ -250,11 +281,22 @@ public class ServerHttpAgent implements HttpAgent {
         init(properties);
     }
 
+    /**
+     * 通过一个prop 对象进行初始化
+     * @param properties
+     * @throws NacosException
+     */
     public ServerHttpAgent(Properties properties) throws NacosException {
+        // 根据配置初始化服务器列表
         serverListMgr = new ServerListManager(properties);
+        // 初始化一个需要验证 username  password 的对象
         securityProxy = new SecurityProxy(properties);
+        // 获取命名空间
         namespaceId = properties.getProperty(PropertyKeyConst.NAMESPACE);
+        // 初始化一些属性
         init(properties);
+        // 使用 proxy对象登录 实际上就是通过username password 访问服务器指定的 url路径获取accessToken (如果对端没有要求username/password 就可以直接获取accessToken吧)
+        // 更新失败时不做任何提示
         securityProxy.login(serverListMgr.getServerUrls());
 
         ScheduledExecutorService executorService = new ScheduledThreadPoolExecutor(1, new ThreadFactory() {
@@ -267,6 +309,7 @@ public class ServerHttpAgent implements HttpAgent {
             }
         });
 
+        // 定期刷新accessToken
         executorService.scheduleWithFixedDelay(new Runnable() {
             @Override
             public void run() {
@@ -275,23 +318,36 @@ public class ServerHttpAgent implements HttpAgent {
         }, 0, securityInfoRefreshIntervalMills, TimeUnit.MILLISECONDS);
     }
 
+    /**
+     * 启动 nacos client 时 会通过SecurityProxy 去某个节点上获取accessToken
+     * @param params
+     */
     private void injectSecurityInfo(List<String> params) {
         if (StringUtils.isNotBlank(securityProxy.getAccessToken())) {
             params.add(Constants.ACCESS_TOKEN);
             params.add(securityProxy.getAccessToken());
         }
+        // 设置租户信息(也就是namespaceId)
         if (StringUtils.isNotBlank(namespaceId) && !params.contains(SpasAdapter.TENANT_KEY)) {
             params.add(SpasAdapter.TENANT_KEY);
             params.add(namespaceId);
         }
     }
 
+    /**
+     * 初始化一些其他信息
+     * @param properties
+     */
     private void init(Properties properties) {
         initEncode(properties);
         initAkSk(properties);
         initMaxRetry(properties);
     }
 
+    /**
+     * 默认编码选择 UTF-8
+     * @param properties
+     */
     private void initEncode(Properties properties) {
         encode = TemplateUtils.stringEmptyAndThenExecute(properties.getProperty(PropertyKeyConst.ENCODE), new Callable<String>() {
             @Override
@@ -303,10 +359,12 @@ public class ServerHttpAgent implements HttpAgent {
 
     private void initAkSk(Properties properties) {
         String ramRoleName = properties.getProperty(PropertyKeyConst.RAM_ROLE_NAME);
+        // 设置角色名称
         if (!StringUtils.isBlank(ramRoleName)) {
             STSConfig.getInstance().setRamRoleName(ramRoleName);
         }
 
+        // 从认证模块获取 accessKey
         String ak = properties.getProperty(PropertyKeyConst.ACCESS_KEY);
         if (StringUtils.isBlank(ak)) {
             accessKey = SpasAdapter.getAk();
@@ -314,6 +372,7 @@ public class ServerHttpAgent implements HttpAgent {
             accessKey = ak;
         }
 
+        // 获取密钥
         String sk = properties.getProperty(PropertyKeyConst.SECRET_KEY);
         if (StringUtils.isBlank(sk)) {
             secretKey = SpasAdapter.getSk();

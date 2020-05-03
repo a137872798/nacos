@@ -216,9 +216,16 @@ public class IoUtils {
             return false;
         }
 
+        // 看来 如果使用压缩 那么会携带一个魔数
         return GZIPInputStream.GZIP_MAGIC == ((bytes[1] << 8 | bytes[0]) & 0xFFFF);
     }
 
+    /**
+     * 判断是否使用GZIP 进行压缩  那么进行解压
+     * @param raw
+     * @return
+     * @throws Exception
+     */
     public static byte[] tryDecompress(byte[] raw) throws Exception {
         if (!isGzipStream(raw)) {
             return raw;

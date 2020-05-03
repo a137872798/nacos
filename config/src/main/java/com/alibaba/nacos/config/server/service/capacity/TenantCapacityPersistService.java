@@ -41,6 +41,7 @@ import static com.alibaba.nacos.config.server.utils.LogUtil.fatalLog;
  *
  * @author hexu.hxy
  * @date 2018/03/05
+ * 租户容量 持久层
  */
 @Service
 public class TenantCapacityPersistService {

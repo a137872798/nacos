@@ -28,6 +28,10 @@ public class Chooser<K, T> {
 
     private volatile Ref<T> ref;
 
+    /**
+     * 随机返回某项
+     * @return
+     */
     public T random() {
         List<T> items = ref.items;
         if (items.size() == 0) {
@@ -39,9 +43,14 @@ public class Chooser<K, T> {
         return items.get(ThreadLocalRandom.current().nextInt(items.size()));
     }
 
+    /**
+     * 随机选择一个元素
+     * @return
+     */
     public T randomWithWeight() {
         Ref<T> ref = this.ref;
         double random = ThreadLocalRandom.current().nextDouble(0, 1);
+        // 因为是累加 所以可以使用二分查找
         int index = Arrays.binarySearch(ref.weights, random);
         if (index < 0) {
             index = -index - 1;
@@ -65,8 +74,13 @@ public class Chooser<K, T> {
         this(uniqueKey, new ArrayList<Pair<T>>());
     }
 
+    /**
+     * @param uniqueKey
+     * @param pairs 使用一组数据来初始化 默认为空列表
+     */
     public Chooser(K uniqueKey, List<Pair<T>> pairs) {
         Ref<T> ref = new Ref<T>(pairs);
+        // 打乱顺序
         ref.refresh();
         this.uniqueKey = uniqueKey;
         this.ref = ref;
@@ -83,6 +97,7 @@ public class Chooser<K, T> {
     public void refresh(List<Pair<T>> itemsWithWeight) {
         Ref<T> newRef = new Ref<T>(itemsWithWeight);
         newRef.refresh();
+        // 使用内部元素初始化 poller
         newRef.poller = this.ref.poller.refresh(newRef.items);
         this.ref = newRef;
     }
@@ -91,6 +106,9 @@ public class Chooser<K, T> {
         private List<Pair<T>> itemsWithWeight = new ArrayList<Pair<T>>();
         private List<T> items = new ArrayList<T>();
         private Poller<T> poller = new GenericPoller<T>(items);
+        /**
+         * 每个元素是本item 对应的权重 与之前所有权重的和
+         */
         private double[] weights;
 
         @SuppressWarnings("unchecked")
@@ -119,6 +137,8 @@ public class Chooser<K, T> {
                 originWeightSum += weight;
             }
 
+            // originWeightSum 代表总权重
+
             double[] exactWeights = new double[items.size()];
             int index = 0;
             for (Pair<T> item : itemsWithWeight) {
@@ -127,9 +147,11 @@ public class Chooser<K, T> {
                 if (singleWeight <= 0) {
                     continue;
                 }
+                // 计算每个项的比率
                 exactWeights[index++] = singleWeight / originWeightSum;
             }
 
+            // 权重依次递增
             weights = new double[items.size()];
             double randomRange = 0D;
             for (int i = 0; i < index; i++) {
@@ -139,6 +161,7 @@ public class Chooser<K, T> {
 
             double doublePrecisionDelta = 0.0001;
 
+            // 确保权重总值接近与1的偏差在0.0001
             if (index == 0 || (Math.abs(weights[index - 1] - 1) < doublePrecisionDelta)) {
                 return;
             }

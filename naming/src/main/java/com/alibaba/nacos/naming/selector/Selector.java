@@ -35,6 +35,7 @@ import java.util.List;
  * @see com.alibaba.nacos.api.selector.SelectorType
  * @see SelectorJsonAdapter
  * @since 0.7.0
+ * 均衡负载对象
  */
 public interface Selector {
 
@@ -42,6 +43,7 @@ public interface Selector {
      * Get the type of this selector
      *
      * @return type of selector
+     * 基于什么作为选择的标准
      */
     String getType();
 
@@ -51,6 +53,7 @@ public interface Selector {
      * @param consumer  consumer address
      * @param providers candidate provider addresses
      * @return selected provider addresses
+     * 选择某组实例
      */
     List<Instance> select(String consumer, List<Instance> providers);
 }

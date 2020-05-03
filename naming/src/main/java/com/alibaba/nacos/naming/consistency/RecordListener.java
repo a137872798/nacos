@@ -29,6 +29,7 @@ public interface RecordListener<T extends Record> {
      *
      * @param key candidate key
      * @return true if the listener was registered with this key
+     * 监听器是否对key 感兴趣
      */
     boolean interests(String key);
 
@@ -46,6 +47,7 @@ public interface RecordListener<T extends Record> {
      * @param key   target key
      * @param value data of the key
      * @throws Exception
+     * 对应的key 发生变化时
      */
     void onChange(String key, T value) throws Exception;
 

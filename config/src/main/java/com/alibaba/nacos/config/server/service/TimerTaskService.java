@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * 定时任务服务
+ * 定时任务服务   提供一个静态定时器
  *
  * @author Nacos
  */

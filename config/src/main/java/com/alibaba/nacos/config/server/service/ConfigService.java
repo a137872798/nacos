@@ -40,9 +40,14 @@ import static com.alibaba.nacos.config.server.utils.LogUtil.*;
  * config service
  *
  * @author Nacos
+ * 核心的配置服务
+ * 这里还会将配置做持久化操作
  */
 public class ConfigService {
 
+    /**
+     * 该对象负责与持久层交互
+     */
     @Autowired
     private static PersistService persistService;
 
@@ -50,6 +55,11 @@ public class ConfigService {
         return CACHE.size();
     }
 
+    /**
+     * 当前是否有某个 group 相关的配置项
+     * @param groupKey
+     * @return
+     */
     static public boolean hasGroupKey(String groupKey) {
         return CACHE.containsKey(groupKey);
     }
@@ -58,27 +68,35 @@ public class ConfigService {
      * 保存配置文件，并缓存md5.
      */
     static public boolean dump(String dataId, String group, String tenant, String content, long lastModifiedTs, String type) {
+        // 根据这些能确定唯一用户的信息 生成 groupKey
         String groupKey = GroupKey2.getKey(dataId, group, tenant);
+        // 先确保缓存项已经被创建 (此时该对象不一定有数据)
         CacheItem ci = makeSure(groupKey);
+        // 设置类型信息
         ci.setType(type);
         final int lockResult = tryWriteLock(groupKey);
         assert (lockResult != 0);
 
+        // 代表尝试获取锁失败 无法进行存储
         if (lockResult < 0) {
             dumpLog.warn("[dump-error] write lock failed. {}", groupKey);
             return false;
         }
 
         try {
+            // 根据当前配置内容生成md5  这样只需要校验md5是否发生变化就能直到 配置项是否变化
             final String md5 = MD5.getInstance().getMD5String(content);
+            // 配置相同的情况 不需要写入磁盘
             if (md5.equals(ConfigService.getContentMd5(groupKey))) {
                 dumpLog.warn(
                     "[dump-ignore] ignore to save cache file. groupKey={}, md5={}, lastModifiedOld={}, "
                         + "lastModifiedNew={}",
                     groupKey, md5, ConfigService.getLastModifiedTs(groupKey), lastModifiedTs);
             } else if (!STANDALONE_MODE || PropertyUtil.isStandaloneUseMysql()) {
+                // 满足写入磁盘条件   写入到磁盘后 更新缓存中的数据
                 DiskUtil.saveToDisk(dataId, group, tenant, content);
             }
+            // 这里只是更新缓存
             updateMd5(groupKey, md5, lastModifiedTs);
             return true;
         } catch (IOException ioe) {
@@ -175,8 +193,10 @@ public class ConfigService {
         }
     }
 
+    // 上面的3个方法都是一个套路
+
     /**
-     * 保存配置文件，并缓存md5.
+     * 保存配置文件 刷新缓存 发出一个配置变更事件 用于通知client
      */
     static public boolean dumpChange(String dataId, String group, String tenant, String content, long lastModifiedTs) {
         final String groupKey = GroupKey2.getKey(dataId, group, tenant);
@@ -214,26 +234,39 @@ public class ConfigService {
         }
     }
 
+    /**
+     * 重新加载配置
+     */
     static public void reloadConfig() {
         String aggreds = null;
         try {
+            // 这里有一个优先级问题  每个节点都会定期同数据库的数据同步 之后写入到本地文件 一般情况下面对client的请求都是通过 基于配置文件同步的缓存数据
+            // 这样就减小了对数据库的读压力
+
+            // 单机模式下   单机模式可能隐式代表着处于非正式环境 或者说访问量必然小 那么直接让数据库承担读压力就好
             if (STANDALONE_MODE && !PropertyUtil.isStandaloneUseMysql()) {
+                // 查找默认数据
                 ConfigInfoBase config = persistService.findConfigInfoBase(AggrWhitelist.AGGRIDS_METADATA,
                     "DEFAULT_GROUP");
                 if (config != null) {
                     aggreds = config.getContent();
                 }
             } else {
+                // 基于 二级缓存(本地文件) 读取数据
                 aggreds = DiskUtil.getConfig(AggrWhitelist.AGGRIDS_METADATA,
                     "DEFAULT_GROUP", StringUtils.EMPTY);
             }
             if (aggreds != null) {
+                // 将数据加载到  一级缓存（内存缓存）
                 AggrWhitelist.load(aggreds);
             }
         } catch (IOException e) {
             dumpLog.error("reload fail:" + AggrWhitelist.AGGRIDS_METADATA, e);
         }
 
+        /**
+         * 从数据库读取clientip 相关的白名单填充到容器中
+         */
         String clientIpWhitelist = null;
         try {
             if (STANDALONE_MODE && !PropertyUtil.isStandaloneUseMysql()) {
@@ -254,6 +287,9 @@ public class ConfigService {
                 + ClientIpWhiteList.CLIENT_IP_WHITELIST_METADATA, e);
         }
 
+        /**
+         * 填充开关信息
+         */
         String switchContent = null;
         try {
             if (STANDALONE_MODE && !PropertyUtil.isStandaloneUseMysql()) {
@@ -275,6 +311,10 @@ public class ConfigService {
 
     }
 
+    /**
+     * 检验缓存中的数据是否与磁盘的一致
+     * @return
+     */
     static public List<String> checkMd5() {
         List<String> diffList = new ArrayList<String>();
         long startTime = System.currentTimeMillis();
@@ -324,6 +364,7 @@ public class ConfigService {
         }
 
         try {
+            // 先删除文件再删除缓存
             if (!STANDALONE_MODE || PropertyUtil.isStandaloneUseMysql()) {
                 DiskUtil.removeConfigInfo(dataId, group, tenant);
             }
@@ -358,6 +399,7 @@ public class ConfigService {
         }
 
         try {
+            // 集群模式下 才使用本地文件
             if (!STANDALONE_MODE || PropertyUtil.isStandaloneUseMysql()) {
                 DiskUtil.removeConfigInfo4Beta(dataId, group, tenant);
             }
@@ -407,6 +449,12 @@ public class ConfigService {
         }
     }
 
+    /**
+     * 发布一个需要更新的事件   同时更新缓存
+     * @param groupKey
+     * @param md5
+     * @param lastModifiedTs
+     */
     public static void updateMd5(String groupKey, String md5, long lastModifiedTs) {
         CacheItem cache = makeSure(groupKey);
         if (cache.md5 == null || !cache.md5.equals(md5)) {
@@ -495,13 +543,23 @@ public class ConfigService {
         return CACHE.get(groupKey);
     }
 
+    /**
+     * 获取本地配置
+     * @param groupKey
+     * @param ip
+     * @param tag
+     * @return
+     */
     static public String getContentMd5(String groupKey, String ip, String tag) {
+        // 首先尝试从缓存中获取
         CacheItem item = CACHE.get(groupKey);
+        // 如果是 beta版本 并且 本次尝试订阅的client 刚好属于beta的节点 那么返回当前配置md5处理后的值
         if (item != null && item.isBeta) {
             if (item.ips4Beta.contains(ip)) {
                 return item.md54Beta;
             }
         }
+        // 返回 tag版本 的md5数据
         if (item != null && item.tagMd5 != null && item.tagMd5.size() > 0) {
             if (StringUtils.isNotBlank(tag) && item.tagMd5.containsKey(tag)) {
                 return item.tagMd5.get(tag);
@@ -520,6 +578,14 @@ public class ConfigService {
         return StringUtils.equals(md5, serverMd5);
     }
 
+    /**
+     * 根据groupKey 等 唯一信息 从本机中找到当前配置项 并与传入的md5进行比较
+     * @param groupKey
+     * @param md5
+     * @param ip
+     * @param tag
+     * @return
+     */
     static public boolean isUptodate(String groupKey, String md5, String ip, String tag) {
         String serverMd5 = ConfigService.getContentMd5(groupKey, ip, tag);
         return StringUtils.equals(md5, serverMd5);
@@ -555,6 +621,7 @@ public class ConfigService {
      */
     static int tryWriteLock(String groupKey) {
         CacheItem groupItem = CACHE.get(groupKey);
+        // 这里每个缓存项对应一个锁对象
         int result = (null == groupItem) ? 0 : (groupItem.rwLock.tryWriteLock() ? 1 : -1);
         if (result < 0) {
             defaultLog.warn("[write-lock] failed, {}, {}", result, groupKey);

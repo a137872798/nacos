@@ -28,6 +28,7 @@ import java.lang.annotation.*;
  * @see NamingService
  * @see NacosProperties
  * @since 0.2.1
+ * 该注解 负责将 ConfigService 和 NamingService 注入到目标对象中
  */
 @Target({ElementType.CONSTRUCTOR, ElementType.FIELD, ElementType.METHOD, ElementType.ANNOTATION_TYPE})
 @Retention(RetentionPolicy.RUNTIME)

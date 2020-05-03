@@ -29,7 +29,7 @@ import java.util.concurrent.ConcurrentMap;
  */
 public class ClientTrackService {
     /**
-     * 跟踪客户端md5.
+     * 通过传入的 ip 找到被追踪的client对象 并使用最新数据进行覆盖
      */
     static public void trackClientMd5(String ip, Map<String, String> clientMd5Map) {
         ClientRecord record = getClientRecord(ip);
@@ -45,22 +45,30 @@ public class ClientTrackService {
         record.groupKey2pollingTsMap.putAll(clientlastPollingTSMap);
     }
 
+    /**
+     * 准备跟踪某个client发送的md5
+     * @param ip
+     * @param groupKey
+     * @param clientMd5
+     */
     static public void trackClientMd5(String ip, String groupKey, String clientMd5) {
         ClientRecord record = getClientRecord(ip);
+        // 更新最后次校验的时间戳
         record.lastTime = System.currentTimeMillis();
+        // 将本次md5写入到map
         record.groupKey2md5Map.put(groupKey, clientMd5);
         record.groupKey2pollingTsMap.put(groupKey, record.lastTime);
     }
 
     /**
-     * 返回订阅者客户端个数
+     *  如果配置中心是一个集群的话 那么它们的数据如何做同步呢
      */
     static public int subscribeClientCount() {
         return clientRecords.size();
     }
 
     /**
-     * 返回所有订阅者个数
+     * 返回所有订阅者个数    一个 client 可以订阅多个group 而每个group 都认为对应了一个订阅者
      */
     static public long subscriberCount() {
         long count = 0;
@@ -72,6 +80,7 @@ public class ClientTrackService {
 
     /**
      * groupkey ->  SubscriberStatus
+     * group 作为主键
      */
     static public Map<String, SubscriberStatus> listSubStatus(String ip) {
         Map<String, SubscriberStatus> status = new HashMap<String, SubscriberStatus>(100);
@@ -104,6 +113,7 @@ public class ClientTrackService {
             Long lastPollingTs = clientRec.groupKey2pollingTsMap.get(groupKey);
 
             if (null != clientMd5 && lastPollingTs != null) {
+                // 对比md5信息 看配置是否发生了变化
                 Boolean isUpdate = ConfigService.isUptodate(groupKey, clientMd5);
                 subs.put(clientRec.ip, new SubscriberStatus(groupKey, isUpdate, clientMd5, lastPollingTs));
             }
@@ -114,6 +124,7 @@ public class ClientTrackService {
 
     /**
      * 指定订阅者IP，查找数据是否最新。 groupKey -> isUptodate
+     * 查看某些 group 数据是否已经更新
      */
     static public Map<String, Boolean> isClientUptodate(String ip) {
         Map<String, Boolean> result = new HashMap<String, Boolean>(100);
@@ -168,9 +179,22 @@ public class ClientTrackService {
  * 保存客户端拉数据的记录。
  */
 class ClientRecord {
+
+    /**
+     * 对应客户端的ip信息
+     */
     final String ip;
+    /**
+     * 上次拉取数据的时间
+     */
     volatile long lastTime;
+    /**
+     * value 对应md5信息
+     */
     final ConcurrentMap<String, String> groupKey2md5Map;
+    /**
+     * 以  group 为key  value 为 长轮询的起始时间
+     */
     final ConcurrentMap<String, Long> groupKey2pollingTsMap;
 
     ClientRecord(String clientIp) {

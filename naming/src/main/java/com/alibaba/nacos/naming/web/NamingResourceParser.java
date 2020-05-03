@@ -29,16 +29,24 @@ import javax.servlet.http.HttpServletRequest;
  *
  * @author nkorange
  * @since 1.2.0
+ * 命名服务资源解析器
  */
 public class NamingResourceParser implements ResourceParser {
 
     private static final String AUTH_NAMING_PREFIX = "naming/";
 
+    /**
+     * 接收一个请求对象 并根据对象携带的 group namespace service 生成唯一名称
+     * @param request where we can find the resource info. Given it may vary from Http request to gRPC request,
+     *                we use a Object type for future accommodation.
+     * @return
+     */
     @Override
     public String parseName(Object request) {
 
         HttpServletRequest req = (HttpServletRequest) request;
 
+        // 获取命名空间 服务名称 组名
         String namespaceId = req.getParameter(CommonParams.NAMESPACE_ID);
         String serviceName = req.getParameter(CommonParams.SERVICE_NAME);
         String groupName = req.getParameter(CommonParams.GROUP_NAME);

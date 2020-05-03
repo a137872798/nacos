@@ -21,6 +21,7 @@ import java.util.Objects;
 /**
  * @author nicholas
  * @version $Id: Subscriber.java, v 0.1 2019-05-28 下午10:47 nicholas Exp $$
+ * 订阅者 在架构中对应 client 也就是注册到 nacosServer的节点
  */
 public class Subscriber implements Serializable {
 

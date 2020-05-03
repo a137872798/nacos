@@ -21,6 +21,7 @@ import org.springframework.context.ApplicationEvent;
 /**
  * @author pbting
  * @date 2019-07-10 5:41 PM
+ * 监听服务发生变化的事件
  */
 public class ServiceChangeEvent extends ApplicationEvent {
 

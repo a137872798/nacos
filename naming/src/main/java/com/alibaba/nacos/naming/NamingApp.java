@@ -23,8 +23,9 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * Hello world!
  *
  * @author xxc
+ * 启动命名服务  对应注册中心
  */
-@EnableScheduling
+@EnableScheduling  // 这里还使用了定时器注解
 @SpringBootApplication
 public class NamingApp {
 

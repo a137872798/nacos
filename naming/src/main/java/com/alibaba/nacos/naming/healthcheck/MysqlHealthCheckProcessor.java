@@ -41,6 +41,7 @@ import static com.alibaba.nacos.naming.misc.Loggers.SRV_LOG;
  * MYSQL health check processor
  *
  * @author nacos
+ * 基于 mysql 进行心跳检测  (可以先不看)
  */
 @Component
 public class MysqlHealthCheckProcessor implements HealthCheckProcessor {
@@ -58,6 +59,9 @@ public class MysqlHealthCheckProcessor implements HealthCheckProcessor {
     private static final String CHECK_MYSQL_MASTER_SQL = "show global variables where variable_name='read_only'";
     private static final String MYSQL_SLAVE_READONLY = "ON";
 
+    /**
+     * 维护与实例的连接   连接到 instance的方式 可以是 TCP 可以是 HTTP 或者是 JDBC
+     */
     private static ConcurrentMap<String, Connection> CONNECTION_POOL
             = new ConcurrentHashMap<String, Connection>();
 
@@ -88,6 +92,10 @@ public class MysqlHealthCheckProcessor implements HealthCheckProcessor {
         return TYPE;
     }
 
+    /**
+     * 处理心跳任务
+     * @param task check task
+     */
     @Override
     public void process(HealthCheckTask task) {
         List<Instance> ips = task.getCluster().allIPs(false);
@@ -125,6 +133,9 @@ public class MysqlHealthCheckProcessor implements HealthCheckProcessor {
         }
     }
 
+    /**
+     * 该对象负责通过 JDBC 连接 访问实例
+     */
     private class MysqlCheckTask implements Runnable {
         private Instance ip;
         private HealthCheckTask task;
@@ -145,9 +156,11 @@ public class MysqlHealthCheckProcessor implements HealthCheckProcessor {
 
                 Cluster cluster = task.getCluster();
                 String key = cluster.getService().getName() + ":" + cluster.getName() + ":" + ip.getIp() + ":" + ip.getPort();
+                // 尝试从连接池中获取连接  这里池化的方式很简单 就是使用一个本地缓存  连接没有被释放怎么办???
                 Connection connection = CONNECTION_POOL.get(key);
                 AbstractHealthChecker.Mysql config = (AbstractHealthChecker.Mysql) cluster.getHealthChecker();
 
+                // 找到数据源 通过 用户名密码  获取连接 并缓存
                 if (connection == null || connection.isClosed()) {
                     MysqlDataSource dataSource = new MysqlDataSource();
                     dataSource.setConnectTimeout(CONNECT_TIMEOUT_MS);
@@ -163,6 +176,7 @@ public class MysqlHealthCheckProcessor implements HealthCheckProcessor {
                     CONNECTION_POOL.put(key, connection);
                 }
 
+                // 创建查询用的会话对象
                 statement = connection.createStatement();
                 statement.setQueryTimeout(1);
 
@@ -175,6 +189,7 @@ public class MysqlHealthCheckProcessor implements HealthCheckProcessor {
                         throw new IllegalStateException("current node is slave!");
                     }
                 }
+
 
                 healthCheckCommon.checkOK(ip, task, "mysql:+ok");
                 healthCheckCommon.reEvaluateCheckRT(System.currentTimeMillis() - startTime, task, switchDomain.getMysqlHealthParams());

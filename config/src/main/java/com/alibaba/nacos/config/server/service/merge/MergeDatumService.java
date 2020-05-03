@@ -45,6 +45,9 @@ import static com.alibaba.nacos.core.utils.SystemUtils.LOCAL_IP;
 @Service
 public class MergeDatumService {
 
+    /**
+     * 该对象负责与持久层交互
+     */
     private PersistService persistService;
     static final int INIT_THREAD_COUNT = 40;
     static final AtomicInteger FINISHED = new AtomicInteger();

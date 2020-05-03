@@ -32,6 +32,7 @@ public enum SelectorType {
     none,
     /**
      * select by label
+     * 基于标签来选择
      */
     label
 }

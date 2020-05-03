@@ -29,6 +29,7 @@ import java.util.Iterator;
  * ConfigChangeHandler
  *
  * @author rushsky518
+ * 配置解析器 分别解析prop 和 yml 文件
  */
 public class ConfigChangeHandler {
     private static class ConfigChangeHandlerHolder {
@@ -52,6 +53,14 @@ public class ConfigChangeHandler {
         return ConfigChangeHandlerHolder.INSTANCE;
     }
 
+    /**
+     * 会被匹配的 parser 解析
+     * @param oldContent
+     * @param newContent
+     * @param type
+     * @return
+     * @throws IOException
+     */
     public Map parseChangeData(String oldContent, String newContent, String type) throws IOException {
         for (ConfigChangeParser changeParser: this.parserList) {
             if (changeParser.isResponsibleFor(type)) {

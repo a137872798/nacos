@@ -30,6 +30,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * @author nkorange
  * @author jifengnan 2019-04-26
+ * 集群对象   该对象创建时 还会负责维护集群下所有节点的心跳检测
  */
 public class Cluster extends com.alibaba.nacos.api.naming.pojo.Cluster implements Cloneable {
 
@@ -43,15 +44,24 @@ public class Cluster extends com.alibaba.nacos.api.naming.pojo.Cluster implement
 
     private int defIPPort = -1;
 
+    /**
+     * 心跳检测任务对象   描述该集群内部的节点按照什么方式发送心跳
+     */
     @JSONField(serialize = false)
     private HealthCheckTask checkTask;
 
+    // 该集群内部的持久化实例和短暂实例
+
+    // 并发手段是什么 这里没有使用volatile修饰
     @JSONField(serialize = false)
     private Set<Instance> persistentInstances = new HashSet<>();
 
     @JSONField(serialize = false)
     private Set<Instance> ephemeralInstances = new HashSet<>();
 
+    /**
+     * 该组集群提供的服务
+     */
     @JSONField(serialize = false)
     private Service service;
 
@@ -102,12 +112,16 @@ public class Cluster extends com.alibaba.nacos.api.naming.pojo.Cluster implement
         return ephemeral ? new ArrayList<>(ephemeralInstances) : new ArrayList<>(persistentInstances);
     }
 
+    // 初始化集群对象
     public void init() {
         if (inited) {
             return;
         }
+        // 这里负责所有实例的心跳检测任务   在service 层则是负责间实例的变化通知到client  它们的职能分工不同 (心跳检测是更细粒度的 每个集群可以有不同的通信方式
+        // 而service 则进行统一的通知)
         checkTask = new HealthCheckTask(this);
 
+        // 生成心跳任务 应该是检测该集群下instance 的  在一定延时后执行
         HealthCheckReactor.scheduleCheck(checkTask);
         inited = true;
     }
@@ -185,16 +199,24 @@ public class Cluster extends com.alibaba.nacos.api.naming.pojo.Cluster implement
         return ephemeralInstances.isEmpty() && persistentInstances.isEmpty();
     }
 
+    /**
+     * 更新实例信息
+     * @param ips
+     * @param ephemeral  本次更新的实例是 瞬时实例还是持久实例
+     */
     public void updateIPs(List<Instance> ips, boolean ephemeral) {
 
+        // 代表本次需要更新的是 持久化实例 还是瞬时实例
         Set<Instance> toUpdateInstances = ephemeral ? ephemeralInstances : persistentInstances;
 
+        // 每个实例信息还有一个标识用的key   (ip+port+clusterName)
         HashMap<String, Instance> oldIPMap = new HashMap<>(toUpdateInstances.size());
 
         for (Instance ip : toUpdateInstances) {
             oldIPMap.put(ip.getDatumKey(), ip);
         }
 
+        // 照理说返回的应该是一个空list 先忽略下面的部分
         List<Instance> updatedIPs = updatedIPs(ips, oldIPMap.values());
         if (updatedIPs.size() > 0) {
             for (Instance ip : updatedIPs) {
@@ -203,6 +225,7 @@ public class Cluster extends com.alibaba.nacos.api.naming.pojo.Cluster implement
                 // do not update the ip validation status of updated ips
                 // because the checker has the most precise result
                 // Only when ip is not marked, don't we update the health status of IP:
+                // 使用旧快照的健康信息
                 if (!ip.isMarked()) {
                     ip.setHealthy(oldIP.isHealthy());
                 }
@@ -220,12 +243,14 @@ public class Cluster extends com.alibaba.nacos.api.naming.pojo.Cluster implement
             }
         }
 
+        // 找到本次新增的节点
         List<Instance> newIPs = subtract(ips, oldIPMap.values());
         if (newIPs.size() > 0) {
             Loggers.EVT_LOG.info("{} {SYNC} {IP-NEW} cluster: {}, new ips size: {}, content: {}",
                 getService().getName(), getName(), newIPs.size(), newIPs.toString());
 
             for (Instance ip : newIPs) {
+                // 为该实例对象维护状态
                 HealthCheckStatus.reset(ip);
             }
         }
@@ -236,6 +261,7 @@ public class Cluster extends com.alibaba.nacos.api.naming.pojo.Cluster implement
             Loggers.EVT_LOG.info("{} {SYNC} {IP-DEAD} cluster: {}, dead ips size: {}, content: {}",
                 getService().getName(), getName(), deadIPs.size(), deadIPs.toString());
 
+            // 代表不再需要为该实例维护状态
             for (Instance ip : deadIPs) {
                 HealthCheckStatus.remv(ip);
             }
@@ -243,6 +269,7 @@ public class Cluster extends com.alibaba.nacos.api.naming.pojo.Cluster implement
 
         toUpdateInstances = new HashSet<>(ips);
 
+        // 将当前实例节点 重置成 ips
         if (ephemeral) {
             ephemeralInstances = toUpdateInstances;
         } else {
@@ -250,19 +277,31 @@ public class Cluster extends com.alibaba.nacos.api.naming.pojo.Cluster implement
         }
     }
 
+    /**
+     * 找到 交集 也就是 更新的实例 而不包含新增加的实例
+     * @param a 本次检测到新的服务实例
+     * @param b 之前维护的旧服务实例
+     * @return  返回的应该是个空list
+     */
     public List<Instance> updatedIPs(Collection<Instance> a, Collection<Instance> b) {
 
+        // 取交集
         List<Instance> intersects = (List<Instance>) CollectionUtils.intersection(a, b);
+        // 存放交集 地址 和 实例的映射
         Map<String, Instance> stringIPAddressMap = new ConcurrentHashMap<>(intersects.size());
 
+        // 交集的部分相当于不需要处理 所以先存入 map
         for (Instance instance : intersects) {
             stringIPAddressMap.put(instance.getIp() + ":" + instance.getPort(), instance);
         }
 
+        // 记录某个实例出现的次数
         Map<String, Integer> intersectMap = new ConcurrentHashMap<>(a.size() + b.size());
         Map<String, Instance> instanceMap = new ConcurrentHashMap<>(a.size());
+        // 存放a实例的容器
         Map<String, Instance> instanceMap1 = new ConcurrentHashMap<>(a.size());
 
+        // 先遍历旧的容器 找到属于交集的部分 并存放到 intersectMap  中
         for (Instance instance : b) {
             if (stringIPAddressMap.containsKey(instance.getIp() + ":" + instance.getPort())) {
                 intersectMap.put(instance.toString(), 1);
@@ -270,9 +309,12 @@ public class Cluster extends com.alibaba.nacos.api.naming.pojo.Cluster implement
         }
 
 
+        // 这里遍历a 查看某个实例出现的次数
         for (Instance instance : a) {
+            // 这里也过滤掉新增的部分 实际上留下来的只有 与b 相交的部分
             if (stringIPAddressMap.containsKey(instance.getIp() + ":" + instance.getPort())) {
 
+                // 代表出现了2次
                 if (intersectMap.containsKey(instance.toString())) {
                     intersectMap.put(instance.toString(), 2);
                 } else {
@@ -284,6 +326,7 @@ public class Cluster extends com.alibaba.nacos.api.naming.pojo.Cluster implement
 
         }
 
+        // 照理说所有entry value 都应该是2
         for (Map.Entry<String, Integer> entry : intersectMap.entrySet()) {
             String key = entry.getKey();
             Integer value = entry.getValue();

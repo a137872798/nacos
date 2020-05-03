@@ -33,6 +33,7 @@ import java.util.regex.Pattern;
  * IP under service
  *
  * @author nkorange
+ * 代表一个具体的服务实例
  */
 public class Instance extends com.alibaba.nacos.api.naming.pojo.Instance implements Comparable {
 
@@ -45,6 +46,9 @@ public class Instance extends com.alibaba.nacos.api.naming.pojo.Instance impleme
     @JSONField(serialize = false)
     private volatile boolean mockValid = false;
 
+    /**
+     * 被标记的实例不需要进行心跳检测
+     */
     private volatile boolean marked = false;
 
     private String tenant;

@@ -24,6 +24,7 @@ import java.io.Serializable;
  * 不能增加字段，为了兼容老前台接口（老接口增加一个字段会出现不兼容问题）设置的model。
  *
  * @author Nacos
+ * 配置基类 包含了 配置数据体 数据id  所在组  以及用于检测是否发生变化的md5
  */
 public class ConfigInfoBase implements Serializable, Comparable<ConfigInfoBase> {
     static final long serialVersionUID = -1L;

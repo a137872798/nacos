@@ -64,7 +64,7 @@ public class ConfigServletInner {
     private static final int START_LONGPOLLING_VERSION_NUM = 204;
 
     /**
-     * 轮询接口
+     * 轮询接口  client 监听server 配置项的变化
      */
     public String doPollingConfig(HttpServletRequest request, HttpServletResponse response,
                                   Map<String, String> clientMd5Map, int probeRequestSize)
@@ -72,9 +72,12 @@ public class ConfigServletInner {
 
         // 长轮询
         if (LongPollingService.isSupportLongPolling(request)) {
+            // 为某个client 注册一个长轮询任务
             longPollingService.addLongPollingClient(request, response, clientMd5Map, probeRequestSize);
             return HttpServletResponse.SC_OK + "";
         }
+
+        // TODO 下面的先忽略  应该是老版本的
 
         // else 兼容短轮询逻辑
         List<String> changedGroups = MD5Util.compareMd5(request, response, clientMd5Map);
@@ -121,11 +124,13 @@ public class ConfigServletInner {
 
         final String requestIp = RequestUtil.getRemoteIp(request);
         boolean isBeta = false;
+        // 首先代表 数据已经同步到本地
         if (lockResult > 0) {
             FileInputStream fis = null;
             try {
                 String md5 = Constants.NULL;
                 long lastModified = 0L;
+                // 从一级缓存中获取
                 CacheItem cacheItem = ConfigService.getContentCache(groupKey);
                 if (cacheItem != null) {
                     if (cacheItem.isBeta()) {
@@ -145,14 +150,17 @@ public class ConfigServletInner {
                     if (STANDALONE_MODE && !PropertyUtil.isStandaloneUseMysql()) {
                         configInfoBase = persistService.findConfigInfo4Beta(dataId, group, tenant);
                     } else {
+                        // 获取本地文件
                         file = DiskUtil.targetBetaFile(dataId, group, tenant);
                     }
                     response.setHeader("isBeta", "true");
                 } else {
                     if (StringUtils.isBlank(tag)) {
+                        // 如果请求头携带了 vip 信息
                         if (isUseTag(cacheItem, autoTag)) {
                             if (cacheItem != null) {
                                 if (cacheItem.tagMd5 != null) {
+                                    // 通过tag 找到md5
                                     md5 = cacheItem.tagMd5.get(autoTag);
                                 }
                                 if (cacheItem.tagLastModifiedTs != null) {
@@ -168,13 +176,16 @@ public class ConfigServletInner {
                             response.setHeader("Vipserver-Tag",
                                 URLEncoder.encode(autoTag, StandardCharsets.UTF_8.displayName()));
                         } else {
+                            // 先看正常情况
                             md5 = cacheItem.getMd5();
                             lastModified = cacheItem.getLastModifiedTs();
                             if (STANDALONE_MODE && !PropertyUtil.isStandaloneUseMysql()) {
                                 configInfoBase = persistService.findConfigInfo(dataId, group, tenant);
                             } else {
+                                // 从磁盘读取数据
                                 file = DiskUtil.targetFile(dataId, group, tenant);
                             }
+                            // 代表数据还没有从数据库同步到本地
                             if (configInfoBase == null && fileNotExist(file)) {
                                 // FIXME CacheItem
                                 // 不存在了无法简单的计算推送delayed，这里简单的记做-1
@@ -225,6 +236,7 @@ public class ConfigServletInner {
                     }
                 }
 
+                // 填充md5 作为校验
                 response.setHeader(Constants.CONTENT_MD5, md5);
                 /**
                  *  禁用缓存
@@ -235,6 +247,7 @@ public class ConfigServletInner {
                 if (STANDALONE_MODE && !PropertyUtil.isStandaloneUseMysql()) {
                     response.setDateHeader("Last-Modified", lastModified);
                 } else {
+                    // 从文件中读取数据 并返回
                     fis = new FileInputStream(file);
                     response.setDateHeader("Last-Modified", file.lastModified());
                 }
@@ -265,6 +278,7 @@ public class ConfigServletInner {
                     fis.close();
                 }
             }
+            // 代表数据还没有从数据库同步到本地
         } else if (lockResult == 0) {
 
             // FIXME CacheItem 不存在了无法简单的计算推送delayed，这里简单的记做-1

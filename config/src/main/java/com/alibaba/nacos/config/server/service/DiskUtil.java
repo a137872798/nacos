@@ -175,6 +175,10 @@ public class DiskUtil {
         return MD5.getInstance().getMD5String(getConfig(dataId, group, tenant));
     }
 
+    /**
+     * 心跳文件
+     * @return
+     */
     static public File heartBeatFile() {
         return new File(NACOS_HOME, "status" + File.separator + "heartBeat.txt");
     }

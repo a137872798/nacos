@@ -20,13 +20,22 @@ import com.alibaba.nacos.config.server.utils.event.EventDispatcher.Event;
 import java.util.List;
 
 /**
- * 本地数据发生变更的事件。
+ * 代表发生了本地数据与数据库数据的同步
  *
  * @author Nacos
  */
 public class LocalDataChangeEvent implements Event {
+    /**
+     * 能够定位到某个具体的配置
+     */
     final public String groupKey;
+    /**
+     * 该配置是否是 beta配置
+     */
     final public boolean isBeta;
+    /**
+     * 如果是beta配置又是对哪些ip开放
+     */
     final public List<String> betaIps;
     final public String tag;
 

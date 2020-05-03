@@ -19,6 +19,7 @@ import java.util.List;
 
 /**
  * @author nkorange
+ * 类似迭代器
  */
 public interface Poller<T> {
     /**
@@ -33,6 +34,7 @@ public interface Poller<T> {
      *
      * @param items new item list
      * @return new poller instance
+     * 更新内部存储的数据
      */
     Poller<T> refresh(List<T> items);
 }

@@ -38,12 +38,16 @@ import java.util.concurrent.*;
  * config sub service
  *
  * @author Nacos
+ * 子配置服务
  */
 @Service
 public class ConfigSubService {
 
     private ScheduledExecutorService scheduler;
 
+    /**
+     * 该对象用于监听集群内 server的 变化
+     */
     private ServerListService serverListService;
 
     @Autowired
@@ -78,10 +82,19 @@ public class ConfigSubService {
         return "http://" + ip + RunningConfigUtils.getContextPath() + relativePath;
     }
 
+    /**
+     * 执行 collect 任务
+     * @param url   本次执行的目标url
+     * @param params    携带的参数信息
+     * @param completionService    该对象属于juc内部的 就是维护一组future
+     * @param resultList   用于存放结果
+     * @return
+     */
     private List<SampleResult> runCollectionJob(String url, Map<String, String> params,
                                                 CompletionService<SampleResult> completionService,
                                                 List<SampleResult> resultList) {
 
+        // 找到集群内其他服务器节点
         List<String> ipList = serverListService.getServerList();
         List<SampleResult> collectionResult = new ArrayList<SampleResult>(
             ipList.size());
@@ -99,6 +112,7 @@ public class ConfigSubService {
         SampleResult sampleResults = null;
         for (int i = 0; i < ipList.size(); i++) {
             try {
+                // 等待所有任务结束  以及合并结果
                 Future<SampleResult> f = completionService.poll(1000,
                     TimeUnit.MILLISECONDS);
                 try {
@@ -133,6 +147,12 @@ public class ConfigSubService {
         return collectionResult;
     }
 
+    /**
+     *
+     * @param sampleCollectResult  基础样本
+     * @param sampleResults    进行覆盖或追加的新样本
+     * @return
+     */
     public SampleResult mergeSampleResult(SampleResult sampleCollectResult, List<SampleResult> sampleResults) {
         SampleResult mergeResult = new SampleResult();
         Map<String, String> lisentersGroupkeyStatus = null;
@@ -208,6 +228,15 @@ public class ConfigSubService {
         }
     }
 
+    /**
+     * 获取某个配置的所有样本数据  并进行整合
+     * @param dataId
+     * @param group
+     * @param tenant
+     * @param sampleTime  代表采样次数
+     * @return
+     * @throws Exception
+     */
     public SampleResult getCollectSampleResult(String dataId, String group, String tenant, int sampleTime)
         throws Exception {
         List<SampleResult> resultList = new ArrayList<SampleResult>();
@@ -225,6 +254,7 @@ public class ConfigSubService {
 
         SampleResult sampleCollectResult = new SampleResult();
         for (int i = 0; i < sampleTime; i++) {
+            // 从集群中所有节点拉取配置样本  包含自身
             List<SampleResult> sampleResults = runCollectionJob(url, params, completionService, resultList);
             if (sampleResults != null) {
                 sampleCollectResult = mergeSampleResult(sampleCollectResult, sampleResults);
@@ -233,6 +263,13 @@ public class ConfigSubService {
         return sampleCollectResult;
     }
 
+    /**
+     * 只获取某个ip的所有配置样本
+     * @param ip
+     * @param sampleTime
+     * @return
+     * @throws Exception
+     */
     public SampleResult getCollectSampleResultByIp(String ip, int sampleTime)
         throws Exception {
         List<SampleResult> resultList = new ArrayList<SampleResult>(10);

@@ -21,11 +21,18 @@ import java.util.List;
  * acl info
  *
  * @author Nacos
+ * 该对象负责维护 client白名单
  */
 @SuppressWarnings("PMD.ClassNamingShouldBeCamelRule")
 public class ACLInfo {
 
+    /**
+     * 使用要开启 clientWhiteList 属性
+     */
     private Boolean isOpen;
+    /**
+     * 白名单的ip
+     */
     private List<String> ips;
 
     public List<String> getIps() {

@@ -22,6 +22,7 @@ import java.util.Map;
  * sample result
  *
  * @author Nacos
+ * 某个样本结果
  */
 public class SampleResult implements Serializable {
 

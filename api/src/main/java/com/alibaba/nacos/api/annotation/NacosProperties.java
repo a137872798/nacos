@@ -25,6 +25,7 @@ import java.lang.annotation.*;
  * @author <a href="mailto:mercyblitz@gmail.com">Mercy</a>
  * @see PropertyKeyConst
  * @since 0.2.1
+ * 以注解方式设置 Nacos的属性
  */
 @Target(ElementType.ANNOTATION_TYPE)
 @Retention(RetentionPolicy.RUNTIME)

@@ -39,6 +39,13 @@ import static com.alibaba.nacos.config.server.constant.Constants.WORD_SEPARATOR;
 @SuppressWarnings("PMD.ClassNamingShouldBeCamelRule")
 public class MD5Util {
 
+    /**
+     *
+     * @param request
+     * @param response
+     * @param clientMd5Map  这是client 当前的配置信息
+     * @return
+     */
     static public List<String> compareMd5(HttpServletRequest request,
                                           HttpServletResponse response, Map<String, String> clientMd5Map) {
         List<String> changedGroupKeys = new ArrayList<String>();
@@ -47,8 +54,10 @@ public class MD5Util {
             String groupKey = entry.getKey();
             String clientMd5 = entry.getValue();
             String ip = RequestUtil.getRemoteIp(request);
+            // 对比配置是否发生了变化
             boolean isUptodate = ConfigService.isUptodate(groupKey, clientMd5, ip, tag);
             if (!isUptodate) {
+                // 将变化的配置添加到list中
                 changedGroupKeys.add(groupKey);
             }
         }

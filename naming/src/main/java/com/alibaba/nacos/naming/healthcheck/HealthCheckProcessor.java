@@ -17,6 +17,7 @@ package com.alibaba.nacos.naming.healthcheck;
 
 /**
  * @author nkorange
+ * 该对象负责执行心跳任务
  */
 public interface HealthCheckProcessor {
 

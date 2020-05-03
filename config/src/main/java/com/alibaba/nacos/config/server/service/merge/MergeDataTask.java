@@ -28,6 +28,14 @@ class MergeDataTask extends AbstractTask {
         this(dataId, groupId, tenant, null, clientIp);
     }
 
+    /**
+     * 使用tag进行初始化 需要设置延迟标识
+     * @param dataId
+     * @param groupId
+     * @param tenant
+     * @param tag
+     * @param clientIp
+     */
     MergeDataTask(String dataId, String groupId, String tenant, String tag, String clientIp) {
         this.dataId = dataId;
         this.groupId = groupId;

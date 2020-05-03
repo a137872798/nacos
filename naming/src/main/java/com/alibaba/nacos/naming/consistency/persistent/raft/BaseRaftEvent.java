@@ -20,6 +20,7 @@ import org.springframework.context.ApplicationEvent;
 /**
  * @author pbting
  * @date 2019-07-01 8:46 PM
+ * 拓展了  spring 的事件机制
  */
 public abstract class BaseRaftEvent extends ApplicationEvent {
 

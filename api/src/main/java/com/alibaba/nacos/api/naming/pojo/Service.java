@@ -36,6 +36,7 @@ public class Service {
 
     /**
      * protect threshold
+     * 应该是 保护熔断
      */
     private float protectThreshold = 0.0F;
 

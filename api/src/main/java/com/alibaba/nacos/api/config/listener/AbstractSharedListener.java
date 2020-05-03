@@ -21,10 +21,12 @@ import java.util.concurrent.Executor;
  * Shared Listener
  *
  * @author Nacos
+ * 共享监听器
  */
 @SuppressWarnings("PMD.AbstractClassShouldStartWithAbstractNamingRule")
 public abstract class AbstractSharedListener implements Listener {
 
+    // 通过 group 和 dataId 可以定位到唯一一个配置
     private volatile String dataId;
     private volatile String group;
 

@@ -48,12 +48,16 @@ import static com.alibaba.nacos.core.utils.SystemUtils.STANDALONE_MODE;
  * local data source
  *
  * @author Nacos
+ * 本地数据源对象   实际上提供数据还是依托于数据库
  */
 @Service("localDataSourceService")
 public class LocalDataSourceServiceImpl implements DataSourceService {
 
     private static final Logger logger = LoggerFactory.getLogger(LocalDataSourceServiceImpl.class);
 
+    /**
+     * jdbc驱动名称
+     */
     private static final String JDBC_DRIVER_NAME = "org.apache.derby.jdbc.EmbeddedDriver";
     private static final String DERBY_BASE_DIR = "data" + File.separator + "derby-data";
     private static final String USER_NAME = "nacos";
@@ -67,6 +71,7 @@ public class LocalDataSourceServiceImpl implements DataSourceService {
 
     @PostConstruct
     public void init() {
+        // 该对象是由  apache提供的 基础数据源对象  这里为数据源配置各种参数
         BasicDataSource ds = new BasicDataSource();
         ds.setDriverClassName(JDBC_DRIVER_NAME);
         ds.setUrl("jdbc:derby:" + NACOS_HOME + File.separator + DERBY_BASE_DIR + ";create=true");
@@ -81,6 +86,7 @@ public class LocalDataSourceServiceImpl implements DataSourceService {
             .toMillis(10L));
         ds.setTestWhileIdle(true);
 
+        // 初始化jdbc模板 和  事务模板
         jt = new JdbcTemplate();
         jt.setMaxRows(50000);
         jt.setQueryTimeout(5000);
@@ -90,6 +96,7 @@ public class LocalDataSourceServiceImpl implements DataSourceService {
         tm.setDataSource(ds);
         tjt.setTimeout(5000);
 
+        // 如果是单机模式下启动 且没有使用mysql
         if (STANDALONE_MODE && !propertyUtil.isStandaloneUseMysql()) {
             reload();
         }
@@ -102,6 +109,7 @@ public class LocalDataSourceServiceImpl implements DataSourceService {
             throw new RuntimeException("datasource is null");
         }
         try {
+            // 加载元数据信息
             execute(ds.getConnection(), "META-INF/schema.sql");
         } catch (Exception e) {
             if (logger.isErrorEnabled()) {
@@ -111,6 +119,10 @@ public class LocalDataSourceServiceImpl implements DataSourceService {
         }
     }
 
+    /**
+     * 基于本地数据库  master总是处于可写的状态
+     * @return
+     */
     @Override
     public boolean checkMasterWritable() {
         return true;
@@ -149,9 +161,11 @@ public class LocalDataSourceServiceImpl implements DataSourceService {
         try {
             if (StringUtils.isBlank(System.getProperty(NACOS_HOME_KEY))) {
                 ClassLoader classLoader = getClass().getClassLoader();
+                // 读取 classpath 并加载文件
                 URL url = classLoader.getResource(sqlFile);
                 sqlFileIn = url.openStream();
             } else {
+                // 否则走系统目录
                 File file = new File(
                     System.getProperty(NACOS_HOME_KEY) + File.separator + "conf" + File.separator + "schema.sql");
                 sqlFileIn = new FileInputStream(file);
@@ -191,7 +205,9 @@ public class LocalDataSourceServiceImpl implements DataSourceService {
     private void execute(Connection conn, String sqlFile) throws Exception {
         Statement stmt = null;
         try {
+            // 返回读取的结果
             List<String> sqlList = loadSql(sqlFile);
+            // 创建会话对象挨个执行语句
             stmt = conn.createStatement();
             for (String sql : sqlList) {
                 try {

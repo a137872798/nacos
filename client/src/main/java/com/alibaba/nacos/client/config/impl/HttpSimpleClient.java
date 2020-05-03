@@ -35,13 +35,17 @@ import java.util.*;
  * Http tool
  *
  * @author Nacos
+ * 一个简易的用于发起 http请求的client
  */
 public class HttpSimpleClient {
 
     static public HttpResult httpGet(String url, List<String> headers, List<String> paramValues,
                                      String encoding, long readTimeoutMs, boolean isSSL) throws IOException {
+        // 按照指定编码方式处理参数
         String encodedContent = encodingParams(paramValues, encoding);
+        // 将参数 追加到 url 后面
         url += (null == encodedContent) ? "" : ("?" + encodedContent);
+        // 本次请求被限流时    避免单节点 反复读取某个配置
         if (Limiter.isLimit(MD5.getInstance().getMD5String(
             new StringBuilder(url).append(encodedContent).toString()))) {
             return new HttpResult(NacosException.CLIENT_OVER_THRESHOLD,
@@ -55,9 +59,12 @@ public class HttpSimpleClient {
             conn.setRequestMethod("GET");
             conn.setConnectTimeout(ParamUtil.getConnectTimeout() > 100 ? ParamUtil.getConnectTimeout() : 100);
             conn.setReadTimeout((int) readTimeoutMs);
+            // 增加特殊的header 同时将参数中的header 设置到list 中
             List<String> newHeaders = getHeaders(url, headers, paramValues);
+            // 设置header 到conn上
             setHeaders(conn, newHeaders, encoding);
 
+            // 发起连接 这里应该会阻塞直到返回结果
             conn.connect();
 
             int respCode = conn.getResponseCode();
@@ -68,6 +75,7 @@ public class HttpSimpleClient {
             } else {
                 resp = IoUtils.toString(conn.getErrorStream(), encoding);
             }
+            // 生成结果对象
             return new HttpResult(respCode, conn.getHeaderFields(), resp);
         } finally {
             IoUtils.closeQuietly(conn);
@@ -217,6 +225,13 @@ public class HttpSimpleClient {
         return newHeaders;
     }
 
+    /**
+     * 参数使用 UTF-8(默认) 编码
+     * @param paramValues
+     * @param encoding
+     * @return
+     * @throws UnsupportedEncodingException
+     */
     static private String encodingParams(List<String> paramValues, String encoding)
         throws UnsupportedEncodingException {
         StringBuilder sb = new StringBuilder();
@@ -224,6 +239,7 @@ public class HttpSimpleClient {
             return null;
         }
 
+        // 每2个值作为一个键值对
         for (Iterator<String> iter = paramValues.iterator(); iter.hasNext(); ) {
             sb.append(iter.next()).append("=");
             sb.append(URLEncoder.encode(iter.next(), encoding));
@@ -234,9 +250,18 @@ public class HttpSimpleClient {
         return sb.toString();
     }
 
+    /**
+     * 发起http请求后获得的结果
+     */
     static public class HttpResult {
         final public int code;
+        /**
+         * 响应头
+         */
         final public Map<String, List<String>> headers;
+        /**
+         * 数据体
+         */
         final public String content;
 
         public HttpResult(int code, String content) {

@@ -21,6 +21,7 @@ import java.util.concurrent.*;
  * Time Service
  *
  * @author Nacos
+ * 可以往该对象添加定时任务   为什么要使用这一条线程呢 那么任务会很杂乱 很多情况甚至创建多个线程池 就是为了解耦
  */
 public class TimerService {
 

@@ -25,6 +25,7 @@ import javax.servlet.ServletContext;
 /**
  * Running config
  * @author nkorange
+ * 本节点运行时配置
  */
 @Component
 public class RunningConfigUtils implements ApplicationListener<WebServerInitializedEvent> {
@@ -38,10 +39,16 @@ public class RunningConfigUtils implements ApplicationListener<WebServerInitiali
 	@Autowired
     private ServletContext servletContext;
 
+    /**
+     * 当感知到初始化时
+     * @param event
+     */
     @Override
 	public void onApplicationEvent(WebServerInitializedEvent event) {
 
+        // 设置当前端口
 		setServerPort(event.getWebServer().getPort());
+		// 设置应用路径
 		setContextPath(servletContext.getContextPath());
 	}
 

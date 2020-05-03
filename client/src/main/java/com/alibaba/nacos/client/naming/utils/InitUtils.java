@@ -36,6 +36,7 @@ public class InitUtils {
      *
      * @param properties
      * @return
+     * 获取注册中心相关的namespace
      */
     public static String initNamespaceForNaming(Properties properties) {
         String tmpNamespace = null;
@@ -105,6 +106,11 @@ public class InitUtils {
         });
     }
 
+    /**
+     * 该地址用于获取 注册中心地址列表
+     * @param properties
+     * @return
+     */
     public static String initEndpoint(final Properties properties) {
         if (properties == null) {
 

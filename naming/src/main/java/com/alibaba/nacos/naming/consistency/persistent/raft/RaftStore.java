@@ -45,23 +45,36 @@ import java.util.concurrent.ConcurrentMap;
 
 /**
  * @author nacos
+ * 该对象负责存储数据
  */
 @Component
 public class RaftStore {
 
+    /**
+     * 一些元数据信息
+     */
     private Properties meta = new Properties();
 
     private String metaFileName = UtilsAndCommons.DATA_BASE_DIR + File.separator + "meta.properties";
 
     private String cacheDir = UtilsAndCommons.DATA_BASE_DIR + File.separator + "data";
 
+    /**
+     * 加载数据  也就是加载某个 service下所有的 instance
+     * @param notifier
+     * @param datums
+     * @throws Exception
+     */
     public synchronized void loadDatums(RaftCore.Notifier notifier, ConcurrentMap<String, Datum> datums) throws Exception {
 
         Datum datum;
         long start = System.currentTimeMillis();
+        // 找到某个目录下所有的缓存文件   cache 按照namespaceId 命名
         for (File cache : listCaches()) {
             if (cache.isDirectory() && cache.listFiles() != null) {
+                // 如果还是一个目录 继续获取下面所有文件
                 for (File datumFile : cache.listFiles()) {
+                    // 从文件中读取数据
                     datum = readDatum(datumFile, cache.getName());
                     if (datum != null) {
                         datums.put(datum.key, datum);
@@ -70,6 +83,7 @@ public class RaftStore {
                 }
                 continue;
             }
+            // 如果 cache 直接是一个文件了 也就代表没有按照命名空间来划分  所有数据都存在默认的命名空间中
             datum = readDatum(cache, StringUtils.EMPTY);
             if (datum != null) {
                 datums.put(datum.key, datum);
@@ -79,6 +93,11 @@ public class RaftStore {
         Loggers.RAFT.info("finish loading all datums, size: {} cost {} ms.", datums.size(), (System.currentTimeMillis() - start));
     }
 
+    /**
+     * 加载元数据信息
+     * @return
+     * @throws Exception
+     */
     public synchronized Properties loadMeta() throws Exception {
         File metaFile = new File(metaFileName);
         if (!metaFile.exists() && !metaFile.getParentFile().mkdirs() && !metaFile.createNewFile()) {
@@ -105,18 +124,27 @@ public class RaftStore {
 
             Loggers.RAFT.info("finish loading datum, key: {} cost {} ms.",
                 key, (System.currentTimeMillis() - start));
+            // 按照key 去匹配文件名 并读取数据
             return readDatum(cache, StringUtils.EMPTY);
         }
 
         return null;
     }
 
+    /**
+     *
+     * @param file   预备被读取的文件
+     * @param namespaceId  对应命名空间的id
+     * @return
+     * @throws IOException
+     */
     public synchronized Datum readDatum(File file, String namespaceId) throws IOException {
 
         ByteBuffer buffer;
         FileChannel fc = null;
         try {
             fc = new FileInputStream(file).getChannel();
+            // 创建等大的 byteBuffer  并利用fileChannel 读取数据
             buffer = ByteBuffer.allocate((int) file.length());
             fc.read(buffer);
 
@@ -125,11 +153,13 @@ public class RaftStore {
                 return null;
             }
 
+            // 如果这个文件有特殊的 前缀 转换成 SwitchDomain
             if (KeyBuilder.matchSwitchKey(file.getName())) {
                 return JSON.parseObject(json, new TypeReference<Datum<SwitchDomain>>() {
                 });
             }
 
+            // 如果是描述 service 的数据  反序列化成 service (同时还包含了 内部的 cluster 以及下面的 instance)
             if (KeyBuilder.matchServiceMetaKey(file.getName())) {
 
                 Datum<Service> serviceDatum;
@@ -146,9 +176,11 @@ public class RaftStore {
                     serviceDatum.value = JSON.parseObject(jsonObject.getString("value"), Service.class);
                 }
 
+                // 没有组信息的话 设置默认组
                 if (StringUtils.isBlank(serviceDatum.value.getGroupName())) {
                     serviceDatum.value.setGroupName(Constants.DEFAULT_GROUP);
                 }
+                // 拼接上group 信息
                 if (!serviceDatum.value.getName().contains(Constants.SERVICE_INFO_SPLITER)) {
                     serviceDatum.value.setName(Constants.DEFAULT_GROUP
                         + Constants.SERVICE_INFO_SPLITER + serviceDatum.value.getName());
@@ -157,6 +189,7 @@ public class RaftStore {
                 return serviceDatum;
             }
 
+            // 如果是实例信息
             if (KeyBuilder.matchInstanceListKey(file.getName())) {
 
                 Datum<Instances> instancesDatum;
@@ -201,12 +234,19 @@ public class RaftStore {
         }
     }
 
+    /**
+     * 将 datum 写入到某个文件中
+     * @param datum
+     * @throws Exception
+     */
     public synchronized void write(final Datum datum) throws Exception {
 
+        // 尝试获取命名空间
         String namespaceId = KeyBuilder.getNamespace(datum.key);
 
         File cacheFile;
 
+        // 如果存在命名空间 那么额外建立一个文件夹
         if (StringUtils.isNotBlank(namespaceId)) {
             cacheFile = new File(cacheDir + File.separator + namespaceId + File.separator + encodeFileName(datum.key));
         } else {
@@ -222,11 +262,14 @@ public class RaftStore {
         FileChannel fc = null;
         ByteBuffer data;
 
+        // 通过工厂方法 将数据包装成 byteBuffer 对象
         data = ByteBuffer.wrap(JSON.toJSONString(datum).getBytes(StandardCharsets.UTF_8));
 
         try {
             fc = new FileOutputStream(cacheFile, false).getChannel();
+            // 这里只是写入到数据页 不一定写入了磁盘 或者说一定没写入磁盘 因为操作系统会做优化
             fc.write(data, data.position());
+            // 强制刷盘
             fc.force(true);
         } catch (Exception e) {
             MetricsMonitor.getDiskException().increment();
@@ -237,7 +280,7 @@ public class RaftStore {
             }
         }
 
-        // remove old format file:
+        // remove old format file:   去除掉 group 信息  且删除对应的文件  什么意思???
         if (StringUtils.isNoneBlank(namespaceId)) {
             if (datum.key.contains(Constants.DEFAULT_GROUP + Constants.SERVICE_INFO_SPLITER)) {
                 String oldFormatKey =
@@ -253,6 +296,11 @@ public class RaftStore {
         }
     }
 
+    /**
+     * 从某个目录下加载一组文件
+     * @return
+     * @throws Exception
+     */
     private File[] listCaches() throws Exception {
         File cacheDir = new File(this.cacheDir);
         if (!cacheDir.exists() && !cacheDir.mkdirs()) {
@@ -262,6 +310,10 @@ public class RaftStore {
         return cacheDir.listFiles();
     }
 
+    /**
+     * 删除某个文件
+     * @param datum
+     */
     public void delete(Datum datum) {
 
         // datum key contains namespace info:
@@ -277,6 +329,11 @@ public class RaftStore {
         }
     }
 
+    /**
+     * 将最新任期写入到 prop文件中
+     * @param term
+     * @throws Exception
+     */
     public void updateTerm(long term) throws Exception {
         File file = new File(metaFileName);
         if (!file.exists() && !file.getParentFile().mkdirs() && !file.createNewFile()) {

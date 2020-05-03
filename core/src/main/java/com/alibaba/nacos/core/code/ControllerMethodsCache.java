@@ -31,10 +31,15 @@ import java.util.concurrent.ConcurrentMap;
  *
  * @author nkorange
  * @since 1.2.0
+ * 这里通过自行读取@RequestMapping修饰的类   做到根据自己需求灵活的匹配method
  */
 @Component
 public class ControllerMethodsCache {
 
+    /**
+     * 相当于一个泛化调用  通过传入对应的 path 找到 method 并处理请求
+     * key: httpMethod + path
+     */
     private ConcurrentMap<String, Method> methods = new
         ConcurrentHashMap<>();
 
@@ -47,8 +52,15 @@ public class ControllerMethodsCache {
         return methods.get(key);
     }
 
+    /**
+     * 它相当于自己写了个轻量级的 HandlerMapping
+     *
+     * @param packageName
+     */
     public void initClassMethod(String packageName) {
+        // 通过包名定位到下面所有的类
         Reflections reflections = new Reflections(packageName);
+        // 找到所有被 @RequestMapping 修饰的类
         Set<Class<?>> classesList = reflections.getTypesAnnotatedWith(RequestMapping.class);
 
         for (Class clazz : classesList) {
@@ -62,14 +74,21 @@ public class ControllerMethodsCache {
         }
     }
 
+    /**
+     * 抽取下面所有携带 @RequestMapping注解的方法
+     * @param clazz
+     */
     public void initClassMethod(Class<?> clazz) {
         RequestMapping requestMapping = clazz.getAnnotation(RequestMapping.class);
+        // 先读取类级别的路径
         for (String classPath : requestMapping.value()) {
             for (Method method : clazz.getMethods()) {
+                // 不包含注解的方法
                 if (!method.isAnnotationPresent(RequestMapping.class)) {
                     parseSubAnnotations(method, classPath);
                     continue;
                 }
+                // 从方法级@RequestMapping 读取requestMethod 同时将映射关系添加到容器中
                 requestMapping = method.getAnnotation(RequestMapping.class);
                 RequestMethod[] requestMethods = requestMapping.method();
                 if (requestMethods.length == 0) {
@@ -83,6 +102,11 @@ public class ControllerMethodsCache {
         }
     }
 
+    /**
+     * 判断是否使用了 下级注解 (严格限定请求方式的注解)
+     * @param method
+     * @param classPath
+     */
     private void parseSubAnnotations(Method method, String classPath) {
 
         final GetMapping getMapping = method.getAnnotation(GetMapping.class);
@@ -113,6 +137,13 @@ public class ControllerMethodsCache {
 
     }
 
+    /**
+     * 将请求方式以及对应的请求路径映射关系添加到 map 中
+     * @param requestMethod
+     * @param classPath
+     * @param requestPaths
+     * @param method
+     */
     private void put(RequestMethod requestMethod, String classPath, String[] requestPaths, Method method) {
         if (ArrayUtils.isEmpty(requestPaths)) {
             methods.put(requestMethod.name() + "-->" + classPath, method);

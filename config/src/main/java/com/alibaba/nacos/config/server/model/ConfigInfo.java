@@ -20,6 +20,7 @@ package com.alibaba.nacos.config.server.model;
  *
  * @author boyan
  * @date 2010-5-4
+ * 额外增加了应用信息 以及租户信息等
  */
 public class ConfigInfo extends ConfigInfoBase {
     static final long serialVersionUID = -1L;

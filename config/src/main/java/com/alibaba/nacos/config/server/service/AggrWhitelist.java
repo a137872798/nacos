@@ -48,6 +48,7 @@ public class AggrWhitelist {
             throw new IllegalArgumentException();
         }
 
+        // 如果数据id 能够匹配上某个聚合白名单的正则 代表该数据id 属于白名单范畴
         for (Pattern pattern : AGGR_DATAID_WHITELIST.get()) {
             if (pattern.matcher(dataId).matches()) {
                 return true;
@@ -58,6 +59,7 @@ public class AggrWhitelist {
 
     /**
      * 传入内容，重新加载聚合白名单
+     * 根据传入的内容构建出一系列正则表达式
      */
      public static void load(String content) {
         if (StringUtils.isBlank(content)) {

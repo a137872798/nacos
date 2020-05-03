@@ -29,14 +29,15 @@ import java.util.Iterator;
 import java.util.List;
 
 /**
- * 通知其他节点取最新数据的服务。 监听数据变更事件，通知所有的server。
- *
+ * 该对象只是负责与其他服务器通信 (基于http请求)
  * @author jiuRen
+ * 这个类应该是被弃用了 没有使用 @Service 注解 同时 AsyncNotifyService 已经具备通知功能了
  */
 public class NotifyService {
 
     @Autowired
     public NotifyService(ServerListService serverListService) {
+        // 该对象维护了所有待执行的任务  以及对应的任务处理器
         notifyTaskManager = new TaskManager("com.alibaba.nacos.NotifyTaskManager");
         notifyTaskManager.setDefaultTaskProcessor(new NotifyTaskProcessor(serverListService));
     }
@@ -50,6 +51,14 @@ public class NotifyService {
     static public final String NOTIFY_HEADER_LAST_MODIFIED = "lastModified";
     static public final String NOTIFY_HEADER_OP_HANDLE_IP = "opHandleIp";
 
+    /**
+     * 发起http请求并处理结果
+     * @param url
+     * @param headers
+     * @param encoding
+     * @return
+     * @throws IOException
+     */
     static public HttpResult invokeURL(String url, List<String> headers, String encoding) throws IOException {
         HttpURLConnection conn = null;
         try {
@@ -65,13 +74,8 @@ public class NotifyService {
                 }
             }
             conn.addRequestProperty("Content-Type", "application/x-www-form-urlencoded;charset=" + encoding);
-            /**
-             *  建立TCP连接
-             */
+
             conn.connect();
-            /**
-             * 这里内部发送请求
-             */
             int respCode = conn.getResponseCode();
             String resp = null;
 

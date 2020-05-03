@@ -21,6 +21,7 @@ import java.util.concurrent.Executor;
  * Listener for watch config
  *
  * @author Nacos
+ * 配置变化监听器
  */
 public interface Listener {
 
@@ -28,6 +29,7 @@ public interface Listener {
      * Get executor for execute this receive
      *
      * @return Executor
+     * 获取对应的执行器 用于处理请求
      */
     Executor getExecutor();
 
@@ -35,6 +37,7 @@ public interface Listener {
      * Receive config info
      *
      * @param configInfo config info
+     *                   代表接收到配置的更新
      */
     void receiveConfigInfo(final String configInfo);
 }

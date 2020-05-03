@@ -45,20 +45,33 @@ import static com.alibaba.nacos.core.utils.SystemUtils.STANDALONE_MODE;
 
 /**
  * @author nacos
+ * 该对象维护某个raft集群的节点
  */
 @Component
 @DependsOn("serverListManager")
 public class RaftPeerSet implements ServerChangeListener, ApplicationContextAware {
 
+    /**
+     * 内部包含集群下所有的 server
+     */
     @Autowired
     private ServerListManager serverListManager;
 
     private ApplicationContext applicationContext;
 
+    /**
+     * 记录本节点的任期信息
+     */
     private AtomicLong localTerm = new AtomicLong(0L);
 
+    /**
+     * 如果本节点是leader 应该不需要设置
+     */
     private RaftPeer leader = null;
 
+    /**
+     * 记录其他节点
+     */
     private Map<String, RaftPeer> peers = new HashMap<>();
 
     private Set<String> sites = new HashSet<>();
@@ -75,11 +88,18 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
         this.applicationContext = applicationContext;
     }
 
+    /**
+     * 本对象也会监控  集群内 server的变化
+     */
     @PostConstruct
     public void init() {
         serverListManager.listen(this);
     }
 
+    /**
+     * 获取raft集群下的 leader节点
+     * @return
+     */
     public RaftPeer getLeader() {
         if (STANDALONE_MODE) {
             return local();
@@ -91,16 +111,29 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
         return sites;
     }
 
+    /**
+     * 应该是代表当前是否属于可用状态吧  当leader 还没有被选举出来时 raft 本身处在不可用状态
+     * @return
+     */
     public boolean isReady() {
         return ready;
     }
 
+    /**
+     * 将某些server 从raft 集群中移除
+     * @param servers
+     */
     public void remove(List<String> servers) {
         for (String server : servers) {
             peers.remove(server);
         }
     }
 
+    /**
+     * 更新某个节点信息
+     * @param peer
+     * @return
+     */
     public RaftPeer update(RaftPeer peer) {
         peers.put(peer.ip, peer);
         return peer;
@@ -119,6 +152,10 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
         return StringUtils.equals(leader.ip, ip);
     }
 
+    /**
+     * 返回当前raft集群内所有节点
+     * @return
+     */
     public Set<String> allServersIncludeMyself() {
         return peers.keySet();
     }
@@ -140,17 +177,26 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
         return peers.size();
     }
 
+    /**
+     * 某个候选节点申请成为leader
+     * @param candidate
+     * @return
+     */
     public RaftPeer decideLeader(RaftPeer candidate) {
         peers.put(candidate.ip, candidate);
 
+        // 该对象为每个值设置了一个计数器   很适合用来做投票箱
         SortedBag ips = new TreeBag();
+        // 最高票数      必须要超半数才作效的  不然就等下一轮选举  否则如果是集群中某些节点宕机了 或者发生脑裂 那么同一时间就会有多个leader
         int maxApproveCount = 0;
+        // 收票最多的节点
         String maxApprovePeer = null;
         for (RaftPeer peer : peers.values()) {
             if (StringUtils.isEmpty(peer.voteFor)) {
                 continue;
             }
 
+            // 传入某个节点选择的投票给谁   这个voteFor 应该要确保在同一任期才有意义
             ips.add(peer.voteFor);
             if (ips.getCount(peer.voteFor) > maxApproveCount) {
                 maxApproveCount = ips.getCount(peer.voteFor);
@@ -158,12 +204,15 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
             }
         }
 
+        // 超过半数 同意某节点成为leader
         if (maxApproveCount >= majorityCount()) {
+            // 将对应节点标记成leader
             RaftPeer peer = peers.get(maxApprovePeer);
             peer.state = RaftPeer.State.LEADER;
 
             if (!Objects.equals(leader, peer)) {
                 leader = peer;
+                // 触发一个leader 替换的事件
                 applicationContext.publishEvent(new LeaderElectFinishedEvent(this, leader));
                 Loggers.RAFT.info("{} has become the LEADER", leader.ip);
             }
@@ -172,9 +221,15 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
         return leader;
     }
 
+    /**
+     * 将 candidate 变成leader 节点
+     * @param candidate
+     * @return
+     */
     public RaftPeer makeLeader(RaftPeer candidate) {
         if (!Objects.equals(leader, candidate)) {
             leader = candidate;
+            // 发起一个 强制指定leader 的事件  在jraft 中并没有这种功能
             applicationContext.publishEvent(new MakeLeaderEvent(this, leader));
             Loggers.RAFT.info("{} has become the LEADER, local: {}, leader: {}",
                 leader.ip, JSON.toJSONString(local()), JSON.toJSONString(leader));
@@ -182,19 +237,24 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
 
         for (final RaftPeer peer : peers.values()) {
             Map<String, String> params = new HashMap<>(1);
+            // 找到原先的那个leader
             if (!Objects.equals(peer, candidate) && peer.state == RaftPeer.State.LEADER) {
                 try {
+                    // 生成api 地址
                     String url = RaftCore.buildURL(peer.ip, RaftCore.API_GET_PEER);
+                    // 发起异步请求
                     HttpClient.asyncHttpGet(url, null, params, new AsyncCompletionHandler<Integer>() {
                         @Override
                         public Integer onCompleted(Response response) throws Exception {
                             if (response.getStatusCode() != HttpURLConnection.HTTP_OK) {
                                 Loggers.RAFT.error("[NACOS-RAFT] get peer failed: {}, peer: {}",
                                     response.getResponseBody(), peer.ip);
+                                // 访问api失败时 将该节点标记成 follower
                                 peer.state = RaftPeer.State.FOLLOWER;
                                 return 1;
                             }
 
+                            // 更新该节点信息
                             update(JSON.parseObject(response.getResponseBody(), RaftPeer.class));
 
                             return 0;
@@ -207,11 +267,18 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
             }
         }
 
+        // 使用参数更新本地 raftPeer信息
         return update(candidate);
     }
 
+    /**
+     * 返回本节点
+     * @return
+     */
     public RaftPeer local() {
+        // 找到本地节点
         RaftPeer peer = peers.get(NetUtils.localServer());
+        // 如果没有找到并且属于单机模式 直接构造一个新节点
         if (peer == null && SystemUtils.STANDALONE_MODE) {
             RaftPeer localPeer = new RaftPeer();
             localPeer.ip = NetUtils.localServer();
@@ -231,10 +298,17 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
         return peers.get(server);
     }
 
+    /**
+     * 代表需要超过半数节点
+     * @return
+     */
     public int majorityCount() {
         return peers.size() / 2 + 1;
     }
 
+    /**
+     * 处置本节点有关raft集群的所有信息
+     */
     public void reset() {
 
         leader = null;
@@ -244,6 +318,10 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
         }
     }
 
+    /**
+     * 设置本节点的任期信息
+     * @param term
+     */
     public void setTerm(long term) {
         localTerm.set(term);
     }
@@ -256,6 +334,10 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
         return peers.containsKey(remote.ip);
     }
 
+    /**
+     * 当感知到某个节点下线 or 上线
+     * @param latestMembers
+     */
     @Override
     public void onChangeServerList(List<Server> latestMembers) {
 
@@ -267,10 +349,12 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
                 continue;
             }
 
+            // 为新增的节点生成 peer 对象
             RaftPeer raftPeer = new RaftPeer();
             raftPeer.ip = member.getKey();
 
             // first time meet the local server:
+            // 先使用本节点任期设置它
             if (NetUtils.localServer().equals(member.getKey())) {
                 raftPeer.term.set(localTerm.get());
             }
@@ -278,7 +362,7 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
             tmpPeers.put(member.getKey(), raftPeer);
         }
 
-        // replace raft peer set:
+        // replace raft peer set:  更新当前raft集群内所有节点
         peers = tmpPeers;
 
         if (RunningConfig.getServerPort() > 0) {

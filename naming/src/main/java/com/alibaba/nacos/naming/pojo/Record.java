@@ -20,6 +20,7 @@ package com.alibaba.nacos.naming.pojo;
  *
  * @author nkorange
  * @since 1.0.0
+ * 信息接口  每个nacosCluster的信息对象都实现该接口
  */
 public interface Record {
     /**

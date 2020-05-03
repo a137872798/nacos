@@ -18,6 +18,7 @@ package com.alibaba.nacos.naming.consistency.persistent.raft;
 /**
  * @author pbting
  * @date 2019-07-01 8:25 PM
+ * 代表当选举结束时的事件
  */
 public class LeaderElectFinishedEvent extends BaseRaftEvent {
 

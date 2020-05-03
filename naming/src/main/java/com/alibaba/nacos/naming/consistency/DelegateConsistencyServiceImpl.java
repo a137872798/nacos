@@ -27,6 +27,7 @@ import org.springframework.stereotype.Service;
  *
  * @author nkorange
  * @since 1.0.0
+ * 根据key携带的标识  选择合适的一致性算法
  */
 @Service("consistencyDelegate")
 public class DelegateConsistencyServiceImpl implements ConsistencyService {

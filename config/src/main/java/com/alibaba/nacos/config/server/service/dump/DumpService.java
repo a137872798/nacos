@@ -55,39 +55,55 @@ import static com.alibaba.nacos.config.server.utils.LogUtil.fatalLog;
  * Dump data service
  *
  * @author Nacos
+ * 为了避免某些节点没有被通知到 配置发生变更 这里需要主动的去同步数据库与本地的配置
  */
 @Service
 public class DumpService {
 
+    /**
+     * 包含了spring配置文件信息
+     */
     @Autowired
     private Environment env;
 
+    /**
+     * 用于与持久层交互的对象
+     */
     @Autowired
     PersistService persistService;
 
+    /**
+     * 该对象的职责应该是首次创建时 根据数据库的数据初始化本地文件
+     */
     @PostConstruct
     public void init() {
         LogUtil.defaultLog.warn("DumpService start");
+        // 多个刷盘处理器
         DumpProcessor processor = new DumpProcessor(this);
         DumpAllProcessor dumpAllProcessor = new DumpAllProcessor(this);
         DumpAllBetaProcessor dumpAllBetaProcessor = new DumpAllBetaProcessor(this);
         DumpAllTagProcessor dumpAllTagProcessor = new DumpAllTagProcessor(this);
 
+        // 生成对应的 manager
         dumpTaskMgr = new TaskManager("com.alibaba.nacos.server.DumpTaskManager");
         dumpTaskMgr.setDefaultTaskProcessor(processor);
 
         dumpAllTaskMgr = new TaskManager("com.alibaba.nacos.server.DumpAllTaskManager");
         dumpAllTaskMgr.setDefaultTaskProcessor(dumpAllProcessor);
 
+        // 添加2个刷盘相关的任务
         Runnable dumpAll = () -> dumpAllTaskMgr.addTask(DumpAllTask.TASK_ID, new DumpAllTask());
-
         Runnable dumpAllBeta = () -> dumpAllTaskMgr.addTask(DumpAllBetaTask.TASK_ID, new DumpAllBetaTask());
 
+        // 定期清理配置历史
         Runnable clearConfigHistory = () -> {
             log.warn("clearConfigHistory start");
+            // 避免并发删除 集群中只有第一个节点具备删除功能  就像 skywalking 数据都是集中发往集群某个节点
             if (ServerListService.isFirstIp()) {
                 try {
+                    // 计算某个之前的时间戳
                     Timestamp startTime = getBeforeStamp(TimeUtils.getCurrentTime(), 24 * getRetentionDays());
+                    // 找到配置历史
                     int totalCount = persistService.findConfigHistoryCountByTime(startTime);
                     if (totalCount > 0) {
                         int pageSize = 1000;
@@ -96,6 +112,7 @@ public class DumpService {
                             new Object[] {startTime, totalCount, pageSize, removeTime});
                         while (removeTime > 0) {
                             // 分页删除，以免批量太大报错
+                            // 分批删除历史记录
                             persistService.removeConfigHistory(startTime, pageSize);
                             removeTime--;
                         }
@@ -107,6 +124,7 @@ public class DumpService {
         };
 
         try {
+            // 将数据库的数据 加载到本地文件以及一级缓存中
             dumpConfigInfo(dumpAllProcessor);
 
             // 更新beta缓存
@@ -122,10 +140,11 @@ public class DumpService {
                 dumpAllTagProcessor.process(DumpAllTagTask.TASK_ID, new DumpAllTagTask());
             }
 
-            // add to dump aggr
+            // add to dump aggr   配置有一个聚合组的概念
             List<ConfigInfoChanged> configList = persistService.findAllAggrGroup();
             if (configList != null && !configList.isEmpty()) {
                 total = configList.size();
+                // 按线程数分组 并行执行任务
                 List<List<ConfigInfoChanged>> splitList = splitList(configList, INIT_THREAD_COUNT);
                 for (List<ConfigInfoChanged> list : splitList) {
                     MergeAllDataWorker work = new MergeAllDataWorker(list);
@@ -140,6 +159,7 @@ public class DumpService {
             throw new RuntimeException(
                 "Nacos Server did not start because dumpservice bean construction failure :\n" + e.getMessage());
         }
+        // 非单机模式下 需要开启心跳任务
         if (!STANDALONE_MODE) {
             Runnable heartbeat = () -> {
                 String heartBeatTime = TimeUtils.getCurrentTime().toString();
@@ -151,11 +171,13 @@ public class DumpService {
                 }
             };
 
+            // 设置一个更新时间戳的文件 (当本次从宕机中恢复时 通过该文件能判断自己离线多久)
             TimerTaskService.scheduleWithFixedDelay(heartbeat, 0, 10, TimeUnit.SECONDS);
 
             long initialDelay = new Random().nextInt(INITIAL_DELAY_IN_MINUTE) + 10;
             LogUtil.defaultLog.warn("initialDelay:{}", initialDelay);
 
+            // 定期执行从数据库同步数据的任务
             TimerTaskService.scheduleWithFixedDelay(dumpAll, initialDelay, DUMP_ALL_INTERVAL_IN_MINUTE,
                 TimeUnit.MINUTES);
 
@@ -163,10 +185,16 @@ public class DumpService {
                 TimeUnit.MINUTES);
         }
 
+        // 定期清理操作记录 避免占用过多磁盘
         TimerTaskService.scheduleWithFixedDelay(clearConfigHistory, 10, 10, TimeUnit.MINUTES);
 
     }
 
+    /**
+     * 进行落盘
+     * @param dumpAllProcessor
+     * @throws IOException
+     */
     private void dumpConfigInfo(DumpAllProcessor dumpAllProcessor)
         throws IOException {
         int timeStep = 6;
@@ -175,25 +203,32 @@ public class DumpService {
         FileInputStream fis = null;
         Timestamp heartheatLastStamp = null;
         try {
+            // 如果是快速启动
             if (isQuickStart()) {
+                // 找到本机的心跳文件
                 File heartbeatFile = DiskUtil.heartBeatFile();
                 if (heartbeatFile.exists()) {
                     fis = new FileInputStream(heartbeatFile);
                     String heartheatTempLast = IoUtils.toString(fis, Constants.ENCODE);
                     heartheatLastStamp = Timestamp.valueOf(heartheatTempLast);
+                    // 还没到下次检测的时间 不进行落盘
                     if (TimeUtils.getCurrentTime().getTime()
+                        // 这里 timeStep * 60 * 60 * 1000 就是6小时
                         - heartheatLastStamp.getTime() < timeStep * 60 * 60 * 1000) {
                         isAllDump = false;
                     }
                 }
             }
+            // 执行一个全落盘任务  从数据库读取配置并设置到二级缓存和一级缓存(配置文件 和 内存)
             if (isAllDump) {
                 LogUtil.defaultLog.info("start clear all config-info.");
+                // 先清理旧文件
                 DiskUtil.clearAll();
                 dumpAllProcessor.process(DumpAllTask.TASK_ID, new DumpAllTask());
             } else {
                 Timestamp beforeTimeStamp = getBeforeStamp(heartheatLastStamp,
                     timeStep);
+                // 根据 近6小时的时间生成任务对象    此时认为本地配置都还是有效的
                 DumpChangeProcessor dumpChangeProcessor = new DumpChangeProcessor(
                     this, beforeTimeStamp, TimeUtils.getCurrentTime());
                 dumpChangeProcessor.process(DumpChangeTask.TASK_ID, new DumpChangeTask());
@@ -205,12 +240,14 @@ public class DumpService {
                         String dataId = dg[0];
                         String group = dg[1];
                         String tenant = dg[2];
+                        // 使用数据库的数据同步本地数据
                         ConfigInfoWrapper configInfo = persistService.queryConfigInfo(dataId, group, tenant);
                         ConfigService.dumpChange(dataId, group, tenant, configInfo.getContent(),
                             configInfo.getLastModified());
                     }
                     LogUtil.defaultLog.error("end checkMd5Task");
                 };
+                // 按一定的间隔时间执行
                 TimerTaskService.scheduleWithFixedDelay(checkMd5Task, 0, 12,
                     TimeUnit.HOURS);
             }
@@ -242,6 +279,10 @@ public class DumpService {
         return Timestamp.valueOf(format.format(cal.getTime()));
     }
 
+    /**
+     * 判断是否是快速启动
+     * @return
+     */
     private Boolean isQuickStart() {
         try {
             String val = null;
@@ -310,9 +351,15 @@ public class DumpService {
         return result;
     }
 
+    /**
+     * 该线程负责将配置进行聚合
+     */
     class MergeAllDataWorker extends Thread {
         static final int PAGE_SIZE = 10000;
 
+        /**
+         * 某组需要做聚合的数据
+         */
         private List<ConfigInfoChanged> configInfoList;
 
         public MergeAllDataWorker(List<ConfigInfoChanged> configInfoList) {
@@ -328,8 +375,10 @@ public class DumpService {
                 String tenant = configInfo.getTenant();
                 try {
                     List<ConfigInfoAggr> datumList = new ArrayList<ConfigInfoAggr>();
+                    // 去详情表 查询待聚合的数据
                     int rowCount = persistService.aggrConfigInfoCount(dataId, group, tenant);
                     int pageCount = (int)Math.ceil(rowCount * 1.0 / PAGE_SIZE);
+                    // 分页处理 避免 OOM
                     for (int pageNo = 1; pageNo <= pageCount; pageNo++) {
                         Page<ConfigInfoAggr> page = persistService.findConfigInfoAggrByPage(dataId, group, tenant,
                             pageNo, PAGE_SIZE);
@@ -343,11 +392,14 @@ public class DumpService {
                     final Timestamp time = TimeUtils.getCurrentTime();
                     // 聚合
                     if (datumList.size() > 0) {
+                        // 将数据进行聚合 实际上就是将Content 拼接
                         ConfigInfo cf = MergeTaskProcessor.merge(dataId, group, tenant, datumList);
                         String aggrContent = cf.getContent();
+                        // 找到本地的md5
                         String localContentMD5 = ConfigService.getContentMd5(GroupKey.getKey(dataId, group));
                         String aggrConetentMD5 = MD5.getInstance().getMD5String(aggrContent);
                         if (!StringUtils.equals(localContentMD5, aggrConetentMD5)) {
+                            // 将聚合结果回填到数据库
                             persistService.insertOrUpdate(null, null, cf, time, null, false);
                             log.info("[merge-ok] {}, {}, size={}, length={}, md5={}, content={}", dataId, group,
                                 datumList.size(), cf.getContent().length(), cf.getMd5(),

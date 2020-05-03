@@ -28,6 +28,7 @@ import static com.alibaba.nacos.core.utils.SystemUtils.STANDALONE_MODE;
  * properties utils
  *
  * @author Nacos
+ * 包含了某些 必备的属性
  */
 @Component
 public class PropertyUtil {
@@ -93,6 +94,7 @@ public class PropertyUtil {
     public void init() {
         try {
 
+            // 从系统变量中设置属性
             setNotifyConnectTimeout(Integer.parseInt(env.getProperty("notifyConnectTimeout", "100")));
             logger.info("notifyConnectTimeout:{}", notifyConnectTimeout);
             setNotifySocketTimeout(Integer.parseInt(env.getProperty("notifySocketTimeout", "200")));

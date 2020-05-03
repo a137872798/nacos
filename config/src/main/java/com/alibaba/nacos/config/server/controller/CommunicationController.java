@@ -55,6 +55,7 @@ public class CommunicationController {
 
     /**
      * 通知配置信息改变
+     * 当集群中某个节点接收到 修改配置的请求时 就会往其他节点发送请求  包含自身
      */
     @GetMapping("/dataChange")
     public Boolean notifyConfigInfo(HttpServletRequest request,
@@ -66,8 +67,10 @@ public class CommunicationController {
         group = group.trim();
         String lastModified = request.getHeader(NotifyService.NOTIFY_HEADER_LAST_MODIFIED);
         long lastModifiedTs = StringUtils.isEmpty(lastModified) ? -1 : Long.parseLong(lastModified);
+        // 获取接收nacos-config client请求的 server
         String handleIp = request.getHeader(NotifyService.NOTIFY_HEADER_OP_HANDLE_IP);
         String isBetaStr = request.getHeader("isBeta");
+        // 将数据库的数据更新到本地   那么果然集群是通过数据库保障数据的写入的
         if (StringUtils.isNotBlank(isBetaStr) && trueStr.equals(isBetaStr)) {
             dumpService.dump(dataId, group, tenant, lastModifiedTs, handleIp, true);
         } else {

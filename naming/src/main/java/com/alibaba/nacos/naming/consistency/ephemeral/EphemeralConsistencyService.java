@@ -30,6 +30,7 @@ import com.alibaba.nacos.naming.consistency.ConsistencyService;
  *
  * @author nkorange
  * @since 1.0.0
+ * 短暂的一致性服务   在nacos 中好像指的是 基于AP 的实现 也就是不需要对数据本身做持久化 每当集群中某个节点上线时 自动与其他节点同步数据
  */
 public interface EphemeralConsistencyService extends ConsistencyService {
 }

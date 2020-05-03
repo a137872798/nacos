@@ -54,6 +54,7 @@ import java.util.Set;
  * @author nkorange
  * @see CmdbReader
  * @since 0.7.0
+ * 基于标签选择
  */
 public class LabelSelector extends ExpressionSelector implements Selector {
 
@@ -61,11 +62,18 @@ public class LabelSelector extends ExpressionSelector implements Selector {
      * The labels relevant to this the selector.
      *
      * @see com.alibaba.nacos.api.cmdb.pojo.Label
+     * 内部预存的一组标签对象
      */
     private Set<String> labels;
 
+    /**
+     * '='
+     */
     private static final Set<String> SUPPORTED_INNER_CONNCETORS = new HashSet<>();
 
+    /**
+     * '&'
+     */
     private static final Set<String> SUPPORTED_OUTER_CONNCETORS = new HashSet<>();
 
     private static final String CONSUMER_PREFIX = "CONSUMER.label.";
@@ -93,18 +101,35 @@ public class LabelSelector extends ExpressionSelector implements Selector {
         setType(SelectorType.label.name());
     }
 
+    /**
+     * 创建一个 reader 对象   该对象用于从 cmdb读取数据
+     * @return
+     */
     private CmdbReader getCmdbReader() {
         return SpringContext.getAppContext().getBean(CmdbReader.class);
     }
 
+    /**
+     * 解析表达式并生成一组 字符串
+     * @param expression
+     * @return
+     * @throws NacosException
+     */
     public static Set<String> parseExpression(String expression) throws NacosException {
         return ExpressionInterpreter.parseExpression(expression);
     }
 
 
+    /**
+     * 根据消费者地址 找到一组匹配的提供者
+     * @param consumer  consumer address
+     * @param providers candidate provider addresses
+     * @return
+     */
     @Override
     public List<Instance> select(String consumer, List<Instance> providers) {
 
+        // 没有标签这种分类信息时 直接全数返回
         if (labels.isEmpty()) {
             return providers;
         }
@@ -115,8 +140,10 @@ public class LabelSelector extends ExpressionSelector implements Selector {
             boolean matched = true;
             for (String labelName : getLabels()) {
 
+                //根据消费者地址信息 以及 标签名 还有存储类型 找到标签值
                 String consumerLabelValue = getCmdbReader().queryLabel(consumer, PreservedEntityTypes.ip.name(), labelName);
 
+                //同样的方式找到提供者信息 并进行匹配
                 if (StringUtils.isNotBlank(consumerLabelValue) &&
                         !StringUtils.equals(consumerLabelValue,
                             getCmdbReader().queryLabel(instance.getIp(), PreservedEntityTypes.ip.name(), labelName))) {
@@ -129,6 +156,7 @@ public class LabelSelector extends ExpressionSelector implements Selector {
             }
         }
 
+        // 匹配失败时降级措施是返回所有的提供者
         if (instanceList.isEmpty()) {
             return providers;
         }
@@ -154,6 +182,7 @@ public class LabelSelector extends ExpressionSelector implements Selector {
          *
          * @param expression the label expression to parse
          * @return collection of labels
+         * 将表达式解析成一组标签
          */
         public static Set<String> parseExpression(String expression) throws NacosException {
 
@@ -161,20 +190,25 @@ public class LabelSelector extends ExpressionSelector implements Selector {
                 return new HashSet<>();
             }
 
+            // 去除空格
             expression = StringUtils.deleteWhitespace(expression);
 
+            // 将表达式打散成 token 以及子句
             List<String> elements = getTerms(expression);
             Set<String> gotLabels = new HashSet<>();
             int index = 0;
 
+            // 按照键值对进行拆分
             index = checkInnerSyntax(elements, index);
 
             if (index == -1) {
                 throw new NacosException(NacosException.INVALID_PARAM, "parse expression failed!");
             }
 
+            // 找到provider.label 添加到容器中
             gotLabels.add(elements.get(index++).split(PROVIDER_PREFIX)[1]);
 
+            // 简易的理解为不断地匹配下一个键值对 并将结果保存到list中
             while (index < elements.size()) {
 
                 index = checkOuterSyntax(elements, index);
@@ -193,6 +227,11 @@ public class LabelSelector extends ExpressionSelector implements Selector {
             return gotLabels;
         }
 
+        /***
+         * 将表达式打散
+         * @param expression
+         * @return
+         */
         public static List<String> getTerms(String expression) {
 
             List<String> terms = new ArrayList<>();
@@ -206,7 +245,9 @@ public class LabelSelector extends ExpressionSelector implements Selector {
             int lastIndex = 0;
             for (int index = 0; index < chars.length; index++) {
                 char ch = chars[index];
+                // 尝试匹配 CEQUAL CAND
                 if (characters.contains(ch)) {
+                    // 将子表达式 和 符号分别存放到 list 中
                     terms.add(expression.substring(lastIndex, index));
                     terms.add(expression.substring(index, index+1));
                     index ++;
@@ -214,6 +255,7 @@ public class LabelSelector extends ExpressionSelector implements Selector {
                 }
             }
 
+            // 将最后部分添加到 list 中
             terms.add(expression.substring(lastIndex, chars.length));
 
             return terms;
@@ -242,6 +284,12 @@ public class LabelSelector extends ExpressionSelector implements Selector {
             return checkInnerSyntax(elements, index);
         }
 
+        /**
+         * 检查内部语法
+         * @param elements
+         * @param start
+         * @return
+         */
         private static int checkInnerSyntax(List<String> elements, int start) {
 
             int index = start;
@@ -251,10 +299,12 @@ public class LabelSelector extends ExpressionSelector implements Selector {
                 return -1;
             }
 
+            // 第一个标签必须是  consumer.label
             if (!elements.get(index).startsWith(CONSUMER_PREFIX)) {
                 return -1;
             }
 
+            // 获取剩下的部分
             String labelConsumer = elements.get(index++).split(CONSUMER_PREFIX)[1];
 
             index = skipEmpty(elements, index);
@@ -262,6 +312,7 @@ public class LabelSelector extends ExpressionSelector implements Selector {
                 return -1;
             }
 
+            // 下一个元素必须是 '='
             if (!SUPPORTED_INNER_CONNCETORS.contains(elements.get(index++))) {
                 return -1;
             }
@@ -271,12 +322,14 @@ public class LabelSelector extends ExpressionSelector implements Selector {
                 return -1;
             }
 
+            // 找到 provider.label
             if (!elements.get(index).startsWith(PROVIDER_PREFIX)) {
                 return -1;
             }
 
             String labelProvider = elements.get(index).split(PROVIDER_PREFIX)[1];
 
+            //确保2个标签对应
             if (!labelConsumer.equals(labelProvider)) {
                 return -1;
             }

@@ -29,6 +29,7 @@ import java.util.*;
 
 /**
  * @author nacos
+ * 命名代理
  */
 public class NamingProxy {
 
@@ -40,18 +41,27 @@ public class NamingProxy {
 
     private static final String TIMESTAMP_SYNC_URL = "/distro/checksum";
 
+    /**
+     * 检测集群内节点数据
+     * @param checksumMap   每个key 对应一个service 每个value 对应 校验和信息
+     * @param server  本次目标节点
+     */
     public static void syncCheckSums(Map<String, String> checksumMap, String server) {
 
         try {
             Map<String, String> headers = new HashMap<>(128);
 
             headers.put(HttpHeaderConsts.CLIENT_VERSION_HEADER, VersionUtils.VERSION);
+            // 代表 Nacos-Server  代表本次请求是  nacos 内部的
             headers.put(HttpHeaderConsts.USER_AGENT_HEADER, UtilsAndCommons.SERVER_VERSION);
+            // 维持 http连接
             headers.put("Connection", "Keep-Alive");
 
+            // 这是一个校验  checkSum的http 接口  同时还携带了本server的地址信息
             HttpClient.asyncHttpPutLarge("http://" + server + RunningConfig.getContextPath()
                     + UtilsAndCommons.NACOS_NAMING_CONTEXT + TIMESTAMP_SYNC_URL + "?source=" + NetUtils.localServer(),
                 headers, JSON.toJSONBytes(checksumMap),
+                // 该对象用于处理返回结果
                 new AsyncCompletionHandler() {
                     @Override
                     public Object onCompleted(Response response) throws Exception {
@@ -93,6 +103,12 @@ public class NamingProxy {
             + result.code + " msg: " + result.content);
     }
 
+    /**
+     * 从某个服务节点拉取全部数据
+     * @param server
+     * @return
+     * @throws Exception
+     */
     public static byte[] getAllData(String server) throws Exception {
 
         Map<String, String> params = new HashMap<>(8);
@@ -109,7 +125,12 @@ public class NamingProxy {
             + result.code + " msg: " + result.content);
     }
 
-
+    /**
+     * 发送一个同步数据的请求
+     * @param data
+     * @param curServer
+     * @return
+     */
     public static boolean syncData(byte[] data, String curServer) {
         Map<String, String> headers = new HashMap<>(128);
         
@@ -125,6 +146,7 @@ public class NamingProxy {
             if (HttpURLConnection.HTTP_OK == result.code) {
                 return true;
             }
+            // 304 代表数据没有发生变化
             if (HttpURLConnection.HTTP_NOT_MODIFIED == result.code) {
                 return true;
             }
@@ -173,6 +195,15 @@ public class NamingProxy {
         return StringUtils.EMPTY;
     }
 
+    /**
+     * 发起 http请求 并返回结果
+     * @param api
+     * @param params
+     * @param curServer
+     * @param isPost
+     * @return
+     * @throws Exception
+     */
     public static String reqAPI(String api, Map<String, String> params, String curServer, boolean isPost) throws Exception {
         try {
             List<String> headers = Arrays.asList(

@@ -38,13 +38,23 @@ public class LocalConfigInfoProcessor {
 
     private static final Logger LOGGER = LogUtils.logger(LocalConfigInfoProcessor.class);
 
+    /**
+     * 尝试获取降级配置
+     * @param serverName
+     * @param dataId
+     * @param group
+     * @param tenant
+     * @return
+     */
     static public String getFailover(String serverName, String dataId, String group, String tenant) {
+        // 定位到文件目录
         File localPath = getFailoverFile(serverName, dataId, group, tenant);
         if (!localPath.exists() || !localPath.isFile()) {
             return null;
         }
 
         try {
+            // 存在的情况 读取字节流
             return readFile(localPath);
         } catch (IOException ioe) {
             LOGGER.error("[" + serverName + "] get failover error, " + localPath, ioe);
@@ -95,10 +105,19 @@ public class LocalConfigInfoProcessor {
         }
     }
 
+    /**
+     * 生成快照信息
+     * @param envName  等同于namespace
+     * @param dataId
+     * @param group
+     * @param tenant  租户信息
+     * @param config  配置数据流
+     */
     static public void saveSnapshot(String envName, String dataId, String group, String tenant, String config) {
         if (!SnapShotSwitch.getIsSnapShot()) {
             return;
         }
+        // 查找快照文件
         File file = getSnapshotFile(envName, dataId, group, tenant);
         if (null == config) {
             try {
@@ -116,10 +135,12 @@ public class LocalConfigInfoProcessor {
                     }
                 }
 
+                // 多实例 啥意思???  大概也是写入文件 先不管
                 if (JVMUtil.isMultiInstance()) {
                     ConcurrentDiskUtil.writeFileContent(file, config,
                         Constants.ENCODE);
                 } else {
+                    // 将数据写入文件
                     IoUtils.writeStringToFile(file, config, Constants.ENCODE);
                 }
             } catch (IOException ioe) {

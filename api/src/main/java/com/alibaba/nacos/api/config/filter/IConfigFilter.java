@@ -21,12 +21,14 @@ import com.alibaba.nacos.api.exception.NacosException;
  * Config Filter Interface
  *
  * @author Nacos
+ * 过滤器对象
  */
 public interface IConfigFilter {
     /**
      * Init
      *
      * @param filterConfig Filter Config
+     *                     使用相关配置进行初始化
      */
     void init(IFilterConfig filterConfig);
 
@@ -37,12 +39,14 @@ public interface IConfigFilter {
      * @param response    response
      * @param filterChain filter Chain
      * @throws NacosException exception
+     * 跟 servlet.Filter 类似的api 在内部 通过调用filterChain.doFilter  传播到下一环
      */
     void doFilter(IConfigRequest request, IConfigResponse response, IConfigFilterChain filterChain)
             throws NacosException;
 
     /**
      * deploy
+     * 部署 应该是初始化吧
      */
     void deploy();
 
@@ -50,6 +54,7 @@ public interface IConfigFilter {
      * Get order
      *
      * @return order number
+     * 获取过滤器的顺序
      */
     int getOrder();
 

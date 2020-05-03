@@ -31,18 +31,33 @@ import java.util.List;
  */
 public class ServiceInfo {
 
+    /**
+     * 从服务端接收到的 服务实例信息
+     */
     @JSONField(serialize = false)
     private String jsonFromServer = EMPTY;
     public static final String SPLITER = "@@";
 
+    /**
+     * 服务名
+     */
     private String name;
 
+    /**
+     * 组名
+     */
     private String groupName;
 
+    /**
+     * 集群下所有endpoint
+     */
     private String clusters;
 
     private long cacheMillis = 1000L;
 
+    /**
+     * 能够提供该服务的一组实例信息
+     */
     @JSONField(name = "hosts")
     private List<Instance> hosts = new ArrayList<Instance>();
 
@@ -63,6 +78,10 @@ public class ServiceInfo {
         this.allIPs = allIPs;
     }
 
+    /**
+     * 通过字符串初始化内部的属性
+     * @param key
+     */
     public ServiceInfo(String key) {
 
         int maxIndex = 2;
@@ -162,6 +181,10 @@ public class ServiceInfo {
         return true;
     }
 
+    /**
+     * 使用该注解修饰的字段不会参与序列化
+     * @return
+     */
     @JSONField(serialize = false)
     public String getJsonFromServer() {
         return jsonFromServer;

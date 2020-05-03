@@ -35,10 +35,18 @@ import static com.alibaba.nacos.config.server.utils.LogUtil.fatalLog;
  *
  * @author nkorange
  * @since 1.2.0
+ * 有关权限的持久化服务
  */
 @Service
 public class PermissionPersistService extends PersistService {
 
+    /**
+     * user 与 role 一对多关系  role 与 permission 一对多关系
+     * @param role
+     * @param pageNo
+     * @param pageSize
+     * @return
+     */
     public Page<PermissionInfo> getPermissions(String role, int pageNo, int pageSize) {
         PaginationHelper<PermissionInfo> helper = new PaginationHelper<>();
 

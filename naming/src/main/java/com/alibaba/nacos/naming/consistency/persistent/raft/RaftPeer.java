@@ -23,20 +23,30 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
+ * 对应raft集群中的单个节点 (也可能就是本节点)
  * @author nacos
  */
 public class RaftPeer {
 
     public String ip;
 
+    /**
+     * 某次投票选择的ip
+     */
     public String voteFor;
 
+    /**
+     * 当前节点还处在第几个任期
+     */
     public AtomicLong term = new AtomicLong(0L);
 
     public volatile long leaderDueMs = RandomUtils.nextLong(0, GlobalExecutor.LEADER_TIMEOUT_MS);
 
     public volatile long heartbeatDueMs = RandomUtils.nextLong(0, GlobalExecutor.HEARTBEAT_INTERVAL_MS);
 
+    /**
+     * 初始状态所有节点 都是 follower 在一定延时后 某个节点会尝试发起成为leader 的请求  之后就会成为 candidate  然后再发起一次投票 成功时自己就成为 leader
+     */
     public State state = State.FOLLOWER;
 
     public void resetLeaderDue() {

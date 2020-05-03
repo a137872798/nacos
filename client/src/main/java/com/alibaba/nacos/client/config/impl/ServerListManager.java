@@ -37,6 +37,7 @@ import java.util.concurrent.TimeUnit;
  * Serverlist Manager
  *
  * @author Nacos
+ * 该对象管理所有服务器列表
  */
 public class ServerListManager {
 
@@ -113,23 +114,33 @@ public class ServerListManager {
         }
     }
 
+    /**
+     * 服务器列表管理
+     * @param properties
+     * @throws NacosException
+     */
     public ServerListManager(Properties properties) throws NacosException {
         isStarted = false;
+        // 获取nacos 服务器地址  (就像注册中心的地址是写死的一样  )
         serverAddrsStr = properties.getProperty(PropertyKeyConst.SERVER_ADDR);
         String namespace = properties.getProperty(PropertyKeyConst.NAMESPACE);
+        // 使用相关参数进行初始化
         initParam(properties);
         if (StringUtils.isNotEmpty(serverAddrsStr)) {
             isFixed = true;
             List<String> serverAddrs = new ArrayList<String>();
             String[] serverAddrsArr = serverAddrsStr.split(",");
             for (String serverAddr: serverAddrsArr) {
+                // 确保该地址是使用 https/http 协议的
                 if (serverAddr.startsWith(HTTPS) || serverAddr.startsWith(HTTP)) {
                     serverAddrs.add(serverAddr);
                 } else {
                     String[] serverAddrArr = serverAddr.split(":");
+                    // 如果没有指定 port 那么加上http前缀 以及默认port
                     if (serverAddrArr.length == 1) {
                         serverAddrs.add(HTTP + serverAddrArr[0] + ":" + ParamUtil.getDefaultServerPort());
                     } else {
+                        // 只增加 http前缀
                         serverAddrs.add(HTTP + serverAddr);
                     }
                 }
@@ -144,6 +155,7 @@ public class ServerListManager {
                     + namespace;
             }
         } else {
+            // 如果是基于endpoint 进行初始化 那么 serverList 就是动态变化的  是一个地址服务的 url
             if (StringUtils.isBlank(endpoint)) {
                 throw new NacosException(NacosException.CLIENT_INVALID_PARAM, "endpoint is blank");
             }
@@ -207,12 +219,18 @@ public class ServerListManager {
         return StringUtils.isNotBlank(endpointTmp) ? endpointTmp : "";
     }
 
+    /**
+     * 生成获取服务器列表的任务
+     * @throws NacosException
+     */
     public synchronized void start() throws NacosException {
 
+        // isStarted 代表启动完成  isFixed 代表从配置文件中读取到了 服务器列表
         if (isStarted || isFixed) {
             return;
         }
 
+        // 剩下的情况就变成了 从 地址服务(endpoint)获取某集群下所有server地址
         GetServerListTask getServersTask = new GetServerListTask(addressServerUrl);
         for (int i = 0; i < initServerlistRetryTimes && serverUrls.isEmpty(); ++i) {
             getServersTask.run();
@@ -223,6 +241,7 @@ public class ServerListManager {
             }
         }
 
+        // 超过重试次数还没有拉取到服务列表 直接抛出异常
         if (serverUrls.isEmpty()) {
             LOGGER.error("[init-serverlist] fail to get NACOS-server serverlist! env: {}, url: {}", name,
                 addressServerUrl);
@@ -230,6 +249,7 @@ public class ServerListManager {
                 "fail to get NACOS-server serverlist! env:" + name + ", not connnect url:" + addressServerUrl);
         }
 
+        // 定期从地址服务拉取 集群服务器列表 同时发生变更时 发出一个事件
         TimerService.scheduleWithFixedDelay(getServersTask, 0L, 30L, TimeUnit.SECONDS);
         isStarted = true;
     }
@@ -245,7 +265,13 @@ public class ServerListManager {
         return new ServerAddressIterator(serverUrls);
     }
 
+    /**
+     * 定期拉取服务器列表   也就是将获取服务器列表也做成动态的 而不是写死在配置文件
+     */
     class GetServerListTask implements Runnable {
+        /**
+         * 本次会从哪里获取到 服务器列表
+         */
         final String url;
 
         GetServerListTask(String url) {
@@ -258,6 +284,7 @@ public class ServerListManager {
              * get serverlist from nameserver
              */
             try {
+                // 更新本地服务列表
                 updateIfChanged(getApacheServerList(url, name));
             } catch (Exception e) {
                 LOGGER.error("[" + name + "][update-serverlist] failed to update serverlist from address server!",
@@ -266,6 +293,10 @@ public class ServerListManager {
         }
     }
 
+    /**
+     * 更新 serverUrls
+     * @param newList
+     */
     private void updateIfChanged(List<String> newList) {
         if (null == newList || newList.isEmpty()) {
             LOGGER.warn("[update-serverlist] current serverlist from address server is empty!!!");
@@ -273,6 +304,7 @@ public class ServerListManager {
         }
 
         List<String> newServerAddrList = new ArrayList<String>();
+        // 加上 http 协议
         for (String server : newList) {
             if (server.startsWith(HTTP) || server.startsWith(HTTPS)) {
                 newServerAddrList.add(server);
@@ -287,14 +319,22 @@ public class ServerListManager {
         if (newServerAddrList.equals(serverUrls)) {
             return;
         }
+        // 当发生变化时 发出一个事件
         serverUrls = new ArrayList<String>(newServerAddrList);
         iterator = iterator();
         currentServerAddr = iterator.next();
 
+        // 通过事件总线通知到设置在下面的监听器   用户可以设置钩子
         EventDispatcher.fireEvent(new ServerlistChangeEvent());
         LOGGER.info("[{}] [update-serverlist] serverlist updated to {}", name, serverUrls);
     }
 
+    /**
+     * 拉取服务器列表
+     * @param url
+     * @param name
+     * @return
+     */
     private List<String> getApacheServerList(String url, String name) {
         try {
             HttpResult httpResult = HttpSimpleClient.httpGet(url, null, null, null, 3000);
@@ -303,7 +343,9 @@ public class ServerListManager {
                 if (DEFAULT_NAME.equals(name)) {
                     EnvUtil.setSelfEnv(httpResult.headers);
                 }
+                // 按行读取数据
                 List<String> lines = IoUtils.readLines(new StringReader(httpResult.content));
+                // 转换成 ip : port
                 List<String> result = new ArrayList<String>(lines.size());
                 for (String serverAddr : lines) {
                     if (org.apache.commons.lang3.StringUtils.isNotBlank(serverAddr)) {
@@ -332,6 +374,11 @@ public class ServerListManager {
         return serverUrls.toString();
     }
 
+    /**
+     * 将所有 nacos server 的地址串起来
+     * @param serverIps
+     * @return
+     */
     String getFixedNameSuffix(String... serverIps) {
         StringBuilder sb = new StringBuilder();
         String split = "";
@@ -393,6 +440,7 @@ public class ServerListManager {
 
     /**
      * The name of the different environment
+     * 包含了所有nacos server 的地址
      */
     private String name;
     private String namespace = "";
@@ -412,6 +460,9 @@ public class ServerListManager {
     private int endpointPort = 8080;
     private String contentPath = ParamUtil.getDefaultContextPath();
     private String serverListName = ParamUtil.getDefaultNodesPath();
+    /**
+     * 本次 nacos 的一组服务器地址
+     */
     volatile List<String> serverUrls = new ArrayList<String>();
 
     private volatile String currentServerAddr;
@@ -419,6 +470,9 @@ public class ServerListManager {
     private Iterator<String> iterator;
     public String serverPort = ParamUtil.getDefaultServerPort();
 
+    /**
+     * 这是地址服务的 url  代表可以通过访问该url 获得集群内服务地址
+     */
     public String addressServerUrl;
 
     private String serverAddrsStr;
@@ -427,9 +481,11 @@ public class ServerListManager {
 
 /**
  * Sort the address list, with the same room priority.
+ * 通过该迭代器获取服务器列表
  */
 class ServerAddressIterator implements Iterator<String> {
 
+    // 指定了 serverUrls 的优先级
     static class RandomizedServerAddress implements Comparable<RandomizedServerAddress> {
         static Random random = new Random();
 
@@ -462,8 +518,10 @@ class ServerAddressIterator implements Iterator<String> {
     public ServerAddressIterator(List<String> source) {
         sorted = new ArrayList<RandomizedServerAddress>();
         for (String address : source) {
+            // 将每个地址包装成RandomizedServerAddress  这样当优先级相同时 也能排序
             sorted.add(new RandomizedServerAddress(address));
         }
+        // 获取排序后结果的迭代器 并委托转发到该对象上
         Collections.sort(sorted);
         iter = sorted.iterator();
     }

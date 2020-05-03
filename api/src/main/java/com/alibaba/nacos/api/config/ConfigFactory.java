@@ -25,8 +25,12 @@ import com.alibaba.nacos.api.exception.NacosException;
  * Config Factory
  *
  * @author Nacos
+ * 该对象负责创建 ConfigService 的工厂
+ * nacos-client 首先依赖api层  然后api具备创建各个服务的工厂
  */
 public class ConfigFactory {
+
+    // 分别基于2种方式进行创建
 
     /**
      * Create Config
@@ -52,6 +56,7 @@ public class ConfigFactory {
      * @param serverAddr serverList
      * @return Config
      * @throws ConfigService Exception
+     * 想要启动nacos-config client 首先要设置一个 server 地址  (这里可以是一个集群下所有server的地址 , 拼接)
      */
     public static ConfigService createConfigService(String serverAddr) throws NacosException {
         Properties properties = new Properties();

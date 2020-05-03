@@ -42,12 +42,20 @@ public class FailoverReactor {
 
     private HostReactor hostReactor;
 
+    /**
+     * 指定某个文件夹 并存储容灾数据
+     * @param hostReactor
+     * @param cacheDir
+     */
     public FailoverReactor(HostReactor hostReactor, String cacheDir) {
         this.hostReactor = hostReactor;
         this.failoverDir = cacheDir + "/failover";
         this.init();
     }
 
+    /**
+     * 存放容灾数据 应该是当注册中心不可用时 使用容灾文件记录的服务节点
+     */
     private Map<String, ServiceInfo> serviceMap = new ConcurrentHashMap<String, ServiceInfo>();
     private ScheduledExecutorService executorService = Executors.newSingleThreadScheduledExecutor(new ThreadFactory() {
         @Override
@@ -64,8 +72,9 @@ public class FailoverReactor {
 
     public void init() {
 
+        // 定期检测开关 判断能否读取容灾数据
         executorService.scheduleWithFixedDelay(new SwitchRefresher(), 0L, 5000L, TimeUnit.MILLISECONDS);
-
+        // 定期将服务数据写入到容灾文件
         executorService.scheduleWithFixedDelay(new DiskFileWriter(), 30, DAY_PERIOD_MINUTES, TimeUnit.MINUTES);
 
         // backup file on startup if failover directory is empty.
@@ -98,6 +107,9 @@ public class FailoverReactor {
         return startDT.getTime();
     }
 
+    /**
+     * 定期扫描 容灾开关文件 如果开启的话立即执行容灾任务
+     */
     class SwitchRefresher implements Runnable {
         long lastModifiedMillis = 0L;
 
@@ -106,15 +118,18 @@ public class FailoverReactor {
             try {
                 File switchFile = new File(failoverDir + UtilAndComs.FAILOVER_SWITCH);
                 if (!switchFile.exists()) {
+                    // 文件不存在时 设置容灾模式为false
                     switchParams.put("failover-mode", "false");
                     NAMING_LOGGER.debug("failover switch is not found, " + switchFile.getName());
                     return;
                 }
 
+                // 如果开关文件被动过 才有查看的必要
                 long modified = switchFile.lastModified();
 
                 if (lastModifiedMillis < modified) {
                     lastModifiedMillis = modified;
+                    // 读取 容灾相关的配置信息
                     String failover = ConcurrentDiskUtil.getFileContent(failoverDir + UtilAndComs.FAILOVER_SWITCH,
                         Charset.defaultCharset().toString());
                     if (!StringUtils.isEmpty(failover)) {
@@ -125,6 +140,7 @@ public class FailoverReactor {
                             if ("1".equals(line1)) {
                                 switchParams.put("failover-mode", "true");
                                 NAMING_LOGGER.info("failover-mode is on");
+                                // 确保允许读取容灾文件中的数据时 将数据同步到本地缓存
                                 new FailoverFileReader().run();
                             } else if ("0".equals(line1)) {
                                 switchParams.put("failover-mode", "false");
@@ -142,6 +158,9 @@ public class FailoverReactor {
         }
     }
 
+    /**
+     * 将文件中的数据 覆盖到本地缓存
+     */
     class FailoverFileReader implements Runnable {
 
         @Override
@@ -170,6 +189,7 @@ public class FailoverReactor {
                         continue;
                     }
 
+                    // 读取容灾文件的数据 并序列化成对象
                     ServiceInfo dom = new ServiceInfo(file.getName());
 
                     try {
@@ -197,6 +217,7 @@ public class FailoverReactor {
                             //ignore
                         }
                     }
+                    // 代表数据是有效的 那么保存到容器中
                     if (!CollectionUtils.isEmpty(dom.getHosts())) {
                         domMap.put(dom.getKey(), dom);
                     }
@@ -211,6 +232,9 @@ public class FailoverReactor {
         }
     }
 
+    /**
+     * 定期将本地缓存的 服务信息保存到文件中 注意这是client的功能
+     */
     class DiskFileWriter extends TimerTask {
         @Override
         public void run() {

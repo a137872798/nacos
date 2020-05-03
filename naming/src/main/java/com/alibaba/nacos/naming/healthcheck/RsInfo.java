@@ -23,6 +23,7 @@ import java.util.Map;
  * Metrics info of server
  *
  * @author nacos
+ * 记录本服务的一些指标信息
  */
 public class RsInfo {
     private double load;

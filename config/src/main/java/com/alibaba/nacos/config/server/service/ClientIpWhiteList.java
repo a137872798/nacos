@@ -30,6 +30,8 @@ import static com.alibaba.nacos.config.server.utils.LogUtil.defaultLog;
  * Client ip whitelist
  *
  * @author Nacos
+ * 该对象维护 白名单列表
+ * 配置中心 与 注册中心的区别是什么   在注册中心中很少看见白名单的需求 而在配置中心存在这种概念
  */
 @Service
 public class ClientIpWhiteList {
@@ -52,6 +54,7 @@ public class ClientIpWhiteList {
      * whether start client ip whitelist
      *
      * @return true: enable ; false disable
+     * 是否启用了 客户端白名单特性
      */
     static public boolean isEnableWhitelist() {
         return isOpen;
@@ -69,6 +72,7 @@ public class ClientIpWhiteList {
         }
         defaultLog.warn("[clientIpWhiteList] {}", content);
         try {
+            // 将数据体 反序列化成 ACLInfo 对象
             ACLInfo acl = (ACLInfo)JSONUtils.deserializeObject(content, ACLInfo.class);
             isOpen = acl.getIsOpen();
             CLIENT_IP_WHITELIST.set(acl.getIps());

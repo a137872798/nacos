@@ -22,6 +22,7 @@ import io.prometheus.client.Histogram;
  * Metrics Monitor
  *
  * @author Nacos
+ * 统计对象  用于监控请求的处理时长等
  */
 public class MetricsMonitor {
     private static Gauge nacosMonitor = Gauge.build()

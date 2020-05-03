@@ -19,6 +19,7 @@ package com.alibaba.nacos.client.identify;
  * Credentials
  *
  * @author Nacos
+ * 认证模块  该对象是什么时候初始化的???  内部包含了一些 与 nacos server 通信需要的必备参数
  */
 public class Credentials implements SpasCredential {
 

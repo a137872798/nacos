@@ -17,6 +17,7 @@ package com.alibaba.nacos.naming.misc;
 
 /**
  * @author nacos
+ * 传输层 数据交互对象
  */
 public class Message {
 

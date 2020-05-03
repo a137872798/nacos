@@ -17,7 +17,7 @@ package com.alibaba.nacos.config.server.utils;
 
 /**
  * 最简单的读写锁实现。要求加锁和解锁必须成对调用。
- *
+ * 基于 synchronized 的同步锁
  * @author Nacos
  */
 public class SimpleReadWriteLock {

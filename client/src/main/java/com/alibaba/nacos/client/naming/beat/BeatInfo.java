@@ -21,6 +21,7 @@ import java.util.Map;
 
 /**
  * @author nkorange
+ * 描述心跳信息的
  */
 public class BeatInfo {
 

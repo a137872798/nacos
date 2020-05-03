@@ -22,6 +22,7 @@ import com.alibaba.nacos.api.exception.NacosException;
  * Config Service Interface
  *
  * @author Nacos
+ * 配置中心服务接口  用户通过引入 api 调用相关方法
  */
 public interface ConfigService {
 
@@ -33,6 +34,7 @@ public interface ConfigService {
      * @param timeoutMs read timeout
      * @return config value
      * @throws NacosException NacosException
+     * 通过数据id  和数据组 获取对应配置
      */
     String getConfig(String dataId, String group, long timeoutMs) throws NacosException;
 
@@ -50,6 +52,7 @@ public interface ConfigService {
      * @param listener {@link Listener}
      * @return config value
      * @throws NacosException NacosException
+     * 获取配置的同时 设置一个监听器 这样一旦配置发生更新 就会自动触发
      */
     String getConfigAndSignListener(String dataId, String group, long timeoutMs, Listener listener) throws NacosException;
 
@@ -65,6 +68,7 @@ public interface ConfigService {
      * @param group    group
      * @param listener listener
      * @throws NacosException NacosException
+     * 为某个组的某个配置增加一个监听器
      */
     void addListener(String dataId, String group, Listener listener) throws NacosException;
 
@@ -76,6 +80,7 @@ public interface ConfigService {
      * @param content content
      * @return Whether publish
      * @throws NacosException NacosException
+     * 往配置中心发送某个配置
      */
     boolean publishConfig(String dataId, String group, String content) throws NacosException;
 
@@ -86,6 +91,7 @@ public interface ConfigService {
      * @param group  group
      * @return whether remove
      * @throws NacosException NacosException
+     * 从配置中心移除某个配置
      */
     boolean removeConfig(String dataId, String group) throws NacosException;
 
@@ -102,6 +108,7 @@ public interface ConfigService {
      * Get server status
      *
      * @return whether health
+     * 返回当前集群状态  false 代表当前配置中心集群不可用
      */
     String getServerStatus();
 

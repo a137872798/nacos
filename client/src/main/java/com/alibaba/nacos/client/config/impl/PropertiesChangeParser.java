@@ -33,6 +33,14 @@ public class PropertiesChangeParser extends AbstractConfigChangeParser {
         super("properties");
     }
 
+    /**
+     * 分别读取old 和 new 配置 并填充到map中
+     * @param oldContent   看来配置是一个字符流啊 而不是一个文件
+     * @param newContent
+     * @param type
+     * @return
+     * @throws IOException
+     */
     @Override
     public Map<String, ConfigChangeItem> doParse(String oldContent, String newContent, String type) throws IOException {
         Properties oldProps = new Properties();

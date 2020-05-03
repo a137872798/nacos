@@ -89,11 +89,14 @@ public class ConfigController {
 
     /**
      * 增加或更新非聚合数据。
+     * nacos-config client 可以通过 调用 publishConfig 将配置信息发送到 nacos-config server 上
+     * nacos-config 发送请求是基于单节点的
      *
      * @throws NacosException
      */
     @PostMapping
-    @Secured(action = ActionTypes.WRITE, parser = ConfigResourceParser.class)
+    @Secured(action = ActionTypes.WRITE, parser = ConfigResourceParser.class)   // 使用该注解标识的api需要先进行权限校验
+                                                                                // 对应nacos-config  client启动时获取accessToken
     public Boolean publishConfig(HttpServletRequest request, HttpServletResponse response,
                                  @RequestParam("dataId") String dataId, @RequestParam("group") String group,
                                  @RequestParam(value = "tenant", required = false, defaultValue = StringUtils.EMPTY)
@@ -109,11 +112,15 @@ public class ConfigController {
                                  @RequestParam(value = "type", required = false) String type,
                                  @RequestParam(value = "schema", required = false) String schema)
         throws NacosException {
+        // 获取client ip
         final String srcIp = RequestUtil.getRemoteIp(request);
+        // 获取对应的应用名
         String requestIpApp = RequestUtil.getAppName(request);
         ParamUtils.checkParam(dataId, group, "datumId", content);
         ParamUtils.checkParam(tag);
 
+        // 这里是追加配置的一些额外信息
+        // 属于同组的 client 共享一个dataId  也就是同组的client 只要有一个节点publishConfig 那么其他节点也能读取到
         Map<String, Object> configAdvanceInfo = new HashMap<String, Object>(10);
         if (configTags != null) {
             configAdvanceInfo.put("config_tags", configTags);
@@ -135,6 +142,7 @@ public class ConfigController {
         }
         ParamUtils.checkParam(configAdvanceInfo);
 
+        // 检验本次数据是否是 聚合数据 如果是的化 抛出异常
         if (AggrWhitelist.isAggrDataId(dataId)) {
             log.warn("[aggr-conflict] {} attemp to publish single data, {}, {}",
                 RequestUtil.getRemoteIp(request), dataId, group);
@@ -144,6 +152,8 @@ public class ConfigController {
         final Timestamp time = TimeUtils.getCurrentTime();
         String betaIps = request.getHeader("betaIps");
         ConfigInfo configInfo = new ConfigInfo(dataId, group, tenant, appName, content);
+        // 将数据插入/覆盖到数据库   也就是同组的不同节点可以相互覆盖配置
+        // 当执行写入操作时 要触发一个配置数据修改的事件 代表是外界触发的
         if (StringUtils.isBlank(betaIps)) {
             if (StringUtils.isBlank(tag)) {
                 persistService.insertOrUpdate(srcIp, srcUser, configInfo, time, configAdvanceInfo, false);
@@ -163,7 +173,9 @@ public class ConfigController {
     }
 
     /**
-     * 取数据
+     * 某个 nacos-config client 通过api 访问nacos-server cluster 中的某个单点 获取配置信息 集群没有做强一致性那么就会存在数据延时更新的情况
+     * 有可能会读取到老的数据 那么什么时候进行同步呢
+     *
      *
      * @throws ServletException
      * @throws IOException
@@ -227,6 +239,7 @@ public class ConfigController {
         final Timestamp time = TimeUtils.getCurrentTime();
         ConfigTraceService.logPersistenceEvent(dataId, group, tenant, null, time.getTime(), clientIp,
             ConfigTraceService.PERSISTENCE_EVENT_REMOVE, null);
+        // 从数据库删除数据的同时 发送一条数据变更的事件
         EventDispatcher.fireEvent(new ConfigDataChangeEvent(false, dataId, group, tenant, tag, time.getTime()));
         return true;
     }
@@ -271,13 +284,14 @@ public class ConfigController {
     }
 
     /**
-     * 比较MD5
+     * 某几个配置项 在client端 被设置了监听器 所以要采用长轮询的方式 在server 监听配置的变化
      */
     @PostMapping("/listener")
     @Secured(action = ActionTypes.READ, parser = ConfigResourceParser.class)
     public void listener(HttpServletRequest request, HttpServletResponse response)
         throws ServletException, IOException {
         request.setAttribute("org.apache.catalina.ASYNC_SUPPORTED", true);
+        // 需要监听的一组配置
         String probeModify = request.getParameter("Listening-Configs");
         if (StringUtils.isBlank(probeModify)) {
             throw new IllegalArgumentException("invalid probeModify");
@@ -285,6 +299,7 @@ public class ConfigController {
 
         log.info("listen config id:" + probeModify);
 
+        // 在传输过程中 可能会被编码过 所以要使用UTF-8 还原
         probeModify = URLDecoder.decode(probeModify, Constants.ENCODE);
 
         Map<String, String> clientMd5Map;
@@ -297,6 +312,7 @@ public class ConfigController {
         log.info("listen config id 2:" + probeModify);
 
         // do long-polling
+        // 进行长轮询 监听配置变化
         inner.doPollingConfig(request, response, clientMd5Map, probeModify.length());
     }
 

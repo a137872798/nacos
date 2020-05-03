@@ -17,6 +17,7 @@ package com.alibaba.nacos.naming.push;
 
 /**
  * @author nacos
+ * pushClient 通过该对象从 nacos server拉取数据并下发到 订阅者那里 用于更新数据
  */
 public interface DataSource {
     /**

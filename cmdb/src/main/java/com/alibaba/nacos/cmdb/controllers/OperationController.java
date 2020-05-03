@@ -38,8 +38,10 @@ public class OperationController {
 
     @RequestMapping(value = "/label", method = RequestMethod.GET)
     public String queryLabel(HttpServletRequest request) throws Exception {
+        // 从请求体中获取参数
         String entry = WebUtils.required(request, "entry");
         String label = WebUtils.required(request, "label");
+        // 通过entry 和 label 查询数据
         return cmdbProvider.queryLabel(entry, "ip", label);
     }
 }

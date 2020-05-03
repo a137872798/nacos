@@ -28,11 +28,15 @@ import java.util.concurrent.atomic.AtomicInteger;
  * @author nacos
  */
 public class HealthCheckStatus {
+    // 对应某个 instance 当前心跳检测状态 默认 还没开始检测
     public AtomicBoolean isBeingChecked = new AtomicBoolean(false);
     public AtomicInteger checkFailCount = new AtomicInteger(0);
     public AtomicInteger checkOKCount = new AtomicInteger(0);
     public long checkRT = -1L;
 
+    /**
+     * 维护实例 与当前健康状态的映射
+     */
     private static ConcurrentMap<String, HealthCheckStatus> statusMap = new ConcurrentHashMap<>();
 
     public static void reset(Instance instance) {

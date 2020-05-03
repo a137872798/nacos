@@ -46,16 +46,27 @@ import java.util.concurrent.TimeUnit;
  *
  * @author hexu.hxy
  * @date 2018/03/05
+ * 提供容量服务
+ * 推测 按照租户或者组 来划分允许设置的配置数量
  */
 @Service
 public class CapacityService {
     private static final Logger LOGGER = LoggerFactory.getLogger(CapacityService.class);
 
     private static final Integer ZERO = 0;
+    /**
+     * 初始的页大小
+     */
     private static final int INIT_PAGE_SIZE = 500;
 
+    /**
+     * 基于组的容量服务
+     */
     @Autowired
     private GroupCapacityPersistService groupCapacityPersistService;
+    /**
+     * 基于租户的容量服务
+     */
     @Autowired
     private TenantCapacityPersistService tenantCapacityPersistService;
     @Autowired
@@ -66,7 +77,7 @@ public class CapacityService {
     @PostConstruct
     @SuppressWarnings("PMD.ThreadPoolCreationRule")
     public void init() {
-        // 每个Server都有修正usage的Job在跑，幂等
+        // 每个Server都有修正usage的Job在跑，幂等    （说的是集群中每个单点）
         ThreadFactory threadFactory = new ThreadFactoryBuilder().setNameFormat(
             "com.alibaba.nacos.CapacityManagement-%d").setDaemon(true).build();
         scheduledExecutorService = Executors.newSingleThreadScheduledExecutor(threadFactory);
@@ -87,6 +98,9 @@ public class CapacityService {
         scheduledExecutorService.shutdown();
     }
 
+    /**
+     * 修正当前 组/租户 容量使用   (就是用 config-info 表的记录数作为当前使用容量)
+     */
     public void correctUsage() {
         correctGroupUsage();
         correctTenantUsage();
@@ -100,6 +114,9 @@ public class CapacityService {
         tenantCapacityPersistService.correctUsage(tenant, TimeUtils.getCurrentTime());
     }
 
+    /**
+     * 为租户/组 初始化容量记录
+     */
     public void initAllCapacity() {
         initAllCapacity(false);
         initAllCapacity(true);
@@ -142,6 +159,7 @@ public class CapacityService {
         long lastId = 0;
         int pageSize = 100;
         while (true) {
+            // 获取所有组信息
             List<GroupCapacity> groupCapacityList = groupCapacityPersistService.getCapacityList4CorrectUsage(lastId,
                 pageSize);
             if (groupCapacityList.isEmpty()) {
@@ -150,6 +168,7 @@ public class CapacityService {
             lastId = groupCapacityList.get(groupCapacityList.size() - 1).getId();
             for (GroupCapacity groupCapacity : groupCapacityList) {
                 String group = groupCapacity.getGroup();
+                // 根据组获取使用率信息
                 groupCapacityPersistService.correctUsage(group, TimeUtils.getCurrentTime());
             }
             try {
@@ -461,7 +480,7 @@ public class CapacityService {
             tenantCapacity.setGmtModified(now);
             return tenantCapacityPersistService.insertTenantCapacity(tenantCapacity);
         } catch (DuplicateKeyException e) {
-            // 并发情况下同时insert会出现，ignore
+            // 并发情况下同时insert会出现，ignore    还有如果已经为该租户申请容量记录了 那么也会抛出该异常 此时忽略即可
             LogUtil.defaultLog.warn("tenant: {}, message: {}", tenant, e.getMessage());
         }
         return false;

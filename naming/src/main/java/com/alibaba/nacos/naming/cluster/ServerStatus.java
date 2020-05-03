@@ -20,6 +20,7 @@ package com.alibaba.nacos.naming.cluster;
  *
  * @author nkorange
  * @since 1.0.0
+ * 代表某个服务器状态 (nacos集群下某个服务器)
  */
 public enum ServerStatus {
     /**

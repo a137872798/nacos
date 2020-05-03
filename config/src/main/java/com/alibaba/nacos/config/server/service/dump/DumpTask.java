@@ -40,6 +40,7 @@ import static com.alibaba.nacos.config.server.utils.LogUtil.defaultLog;
  * Dump data task
  *
  * @author Nacos
+ * 刷盘相关的任务
  */
 public class DumpTask extends AbstractTask {
 
@@ -51,6 +52,7 @@ public class DumpTask extends AbstractTask {
         this.tag = null;
         /**
          * retry interval: 1s
+         * 设置任务间隔时间
          */
         setTaskInterval(1000L);
     }
@@ -70,6 +72,7 @@ public class DumpTask extends AbstractTask {
     public DumpTask(String groupKey, String tag, long lastModified, String handleIp, boolean isBeta) {
         this.groupKey = groupKey;
         this.lastModified = lastModified;
+        // 原始的处理nacos-config client请求的节点
         this.handleIp = handleIp;
         this.isBeta = isBeta;
         this.tag = tag;
@@ -79,6 +82,10 @@ public class DumpTask extends AbstractTask {
         setTaskInterval(1000L);
     }
 
+    /**
+     * 默认情况下就是新任务顶替旧任务  不需要整合
+     * @param task task
+     */
     @Override
     public void merge(AbstractTask task) {
     }
@@ -122,6 +129,9 @@ class DumpChangeTask extends AbstractTask {
     static final String TASK_ID = "dumpChangeConfigTask";
 }
 
+/**
+ * 刷盘相关的处理器
+ */
 class DumpProcessor implements TaskProcessor {
 
     DumpProcessor(DumpService dumpService) {
@@ -131,6 +141,7 @@ class DumpProcessor implements TaskProcessor {
     @Override
     public boolean process(String taskType, AbstractTask task) {
         DumpTask dumpTask = (DumpTask)task;
+        // 本次任务针对的是哪个配置
         String[] pair = GroupKey2.parseKey(dumpTask.groupKey);
         String dataId = pair[0];
         String group = pair[1];
@@ -141,9 +152,11 @@ class DumpProcessor implements TaskProcessor {
         String tag = dumpTask.tag;
         if (isBeta) {
             // beta发布，则dump数据，更新beta缓存
+            // 从数据库中找到对应数据
             ConfigInfo4Beta cf = dumpService.persistService.findConfigInfo4Beta(dataId, group, tenant);
             boolean result;
             if (null != cf) {
+                // 将本地文件与数据库做同步  同时更新缓存
                 result = ConfigService.dumpBeta(dataId, group, tenant, cf.getContent(), lastModified, cf.getBetaIps());
                 if (result) {
                     ConfigTraceService.logDumpEvent(dataId, group, tenant, null, lastModified, handleIp,
@@ -151,6 +164,7 @@ class DumpProcessor implements TaskProcessor {
                         cf.getContent().length());
                 }
             } else {
+                // 如果数据库已经移除了该配置 同时移除本地文件以及缓存
                 result = ConfigService.removeBeta(dataId, group, tenant);
                 if (result) {
                     ConfigTraceService.logDumpEvent(dataId, group, tenant, null, lastModified, handleIp,
@@ -159,6 +173,7 @@ class DumpProcessor implements TaskProcessor {
             }
             return result;
         } else {
+            // 处理非beta配置
             if (StringUtils.isBlank(tag)) {
                 ConfigInfo cf = dumpService.persistService.findConfigInfo(dataId, group, tenant);
                 if (dataId.equals(AggrWhitelist.AGGRIDS_METADATA)) {
@@ -204,6 +219,7 @@ class DumpProcessor implements TaskProcessor {
                 }
                 return result;
             } else {
+                // 如果携带了 tag 信息 使用tag 查询数据
                 ConfigInfo4Tag cf = dumpService.persistService.findConfigInfo4Tag(dataId, group, tenant, tag);
                 //
                 boolean result;
@@ -230,6 +246,9 @@ class DumpProcessor implements TaskProcessor {
     final DumpService dumpService;
 }
 
+/**
+ * 该处理器用于处理 刷盘任务
+ */
 class DumpAllProcessor implements TaskProcessor {
 
     DumpAllProcessor(DumpService dumpService) {
@@ -242,16 +261,19 @@ class DumpAllProcessor implements TaskProcessor {
         long currentMaxId = persistService.findConfigMaxId();
         long lastMaxId = 0;
         while (lastMaxId < currentMaxId) {
+            // 按照固定大小读取分页信息
             Page<PersistService.ConfigInfoWrapper> page = persistService.findAllConfigInfoFragment(lastMaxId,
                 PAGE_SIZE);
             if (page != null && page.getPageItems() != null && !page.getPageItems().isEmpty()) {
                 for (PersistService.ConfigInfoWrapper cf : page.getPageItems()) {
                     long id = cf.getId();
+                    // 每次处理的时候 同时更新id
                     lastMaxId = id > lastMaxId ? id : lastMaxId;
                     if (cf.getDataId().equals(AggrWhitelist.AGGRIDS_METADATA)) {
                         AggrWhitelist.load(cf.getContent());
                     }
 
+                    // 如果是某种配置就更新本地数据  同时新配置 会更新旧配置
                     if (cf.getDataId().equals(ClientIpWhiteList.CLIENT_IP_WHITELIST_METADATA)) {
                         ClientIpWhiteList.load(cf.getContent());
                     }
@@ -260,6 +282,7 @@ class DumpAllProcessor implements TaskProcessor {
                         SwitchService.load(cf.getContent());
                     }
 
+                    // 将数据库的数据 转移到本地文件中
                     boolean result = ConfigService.dump(cf.getDataId(), cf.getGroup(), cf.getTenant(), cf.getContent(),
                         cf.getLastModified(), cf.getType());
 
@@ -282,6 +305,9 @@ class DumpAllProcessor implements TaskProcessor {
     final PersistService persistService;
 }
 
+/**
+ * 处理所有 beta  数据  (beta数据也就是代表只有部分受众的 有点像灰度发布)
+ */
 class DumpAllBetaProcessor implements TaskProcessor {
 
     DumpAllBetaProcessor(DumpService dumpService) {
@@ -289,6 +315,12 @@ class DumpAllBetaProcessor implements TaskProcessor {
         this.persistService = dumpService.persistService;
     }
 
+    /**
+     * 基本与上面类似 数据直接落盘
+     * @param taskType task type    任务类型
+     * @param task     task         待处理的任务
+     * @return
+     */
     @Override
     public boolean process(String taskType, AbstractTask task) {
         int rowCount = persistService.configInfoBetaCount();
@@ -319,6 +351,9 @@ class DumpAllBetaProcessor implements TaskProcessor {
     final PersistService persistService;
 }
 
+/**
+ * 也就是一致性是通过数据库来保证的 每个节点定期从数据库拉取最新数据 并更新本地文件  以及刷新二级缓存(内存缓存)
+ */
 class DumpAllTagProcessor implements TaskProcessor {
 
     DumpAllTagProcessor(DumpService dumpService) {
@@ -356,6 +391,9 @@ class DumpAllTagProcessor implements TaskProcessor {
     final PersistService persistService;
 }
 
+/**
+ * 针对数据发生变更时触发
+ */
 class DumpChangeProcessor implements TaskProcessor {
 
     DumpChangeProcessor(DumpService dumpService, Timestamp startTime,
@@ -372,12 +410,15 @@ class DumpChangeProcessor implements TaskProcessor {
             startTime, endTime);
         LogUtil.defaultLog.warn("updateMd5 start");
         long startUpdateMd5 = System.currentTimeMillis();
+        // 这里读取所有配置  不怕发生OOM吗
         List<ConfigInfoWrapper> updateMd5List = persistService
             .listAllGroupKeyMd5();
         LogUtil.defaultLog.warn("updateMd5 count:{}", updateMd5List.size());
         for (ConfigInfoWrapper config : updateMd5List) {
             final String groupKey = GroupKey2.getKey(config.getDataId(),
                 config.getGroup());
+            // 更新缓存  同时触发一个本地配置变更的事件 监听器感知到后 会通知所有订阅该配置的client
+            // 注意这里没有 dump  因为调用的场景是 快速启动 也就是继续使用之前创建的本地配置文件
             ConfigService.updateMd5(groupKey, config.getMd5(),
                 config.getLastModified());
         }
@@ -387,12 +428,14 @@ class DumpChangeProcessor implements TaskProcessor {
 
         LogUtil.defaultLog.warn("deletedConfig start");
         long startDeletedConfigTime = System.currentTimeMillis();
+        // 找到这段时间被删除的配置
         List<ConfigInfo> configDeleted = persistService.findDeletedConfig(
             startTime, endTime);
         LogUtil.defaultLog.warn("deletedConfig count:{}", configDeleted.size());
         for (ConfigInfo configInfo : configDeleted) {
             if (persistService.findConfigInfo(configInfo.getDataId(), configInfo.getGroup(),
                 configInfo.getTenant()) == null) {
+                // 删除本地配置文件中相关的数据 以及缓存中的数据  每个 dataId对应一个文件
                 ConfigService.remove(configInfo.getDataId(), configInfo.getGroup(), configInfo.getTenant());
             }
         }
@@ -402,6 +445,7 @@ class DumpChangeProcessor implements TaskProcessor {
 
         LogUtil.defaultLog.warn("changeConfig start");
         long startChangeConfigTime = System.currentTimeMillis();
+        // 找到时间段内发生变化的配置
         List<PersistService.ConfigInfoWrapper> changeConfigs = persistService
             .findChangeConfig(startTime, endTime);
         LogUtil.defaultLog.warn("changeConfig count:{}", changeConfigs.size());
@@ -416,6 +460,7 @@ class DumpChangeProcessor implements TaskProcessor {
                     GroupKey2.getKey(cf.getDataId(), cf.getGroup()),
                     cf.getLastModified(), content.length(), md5});
         }
+        // 重新加载配置
         ConfigService.reloadConfig();
         long endChangeConfigTime = System.currentTimeMillis();
         LogUtil.defaultLog.warn("changeConfig done,cost:{}",

@@ -31,13 +31,20 @@ import static com.alibaba.nacos.client.utils.LogUtils.NAMING_LOGGER;
 
 /**
  * @author xuanyin
+ * 事件分发器
  */
 public class EventDispatcher {
 
     private ExecutorService executor = null;
 
+    /**
+     * 发生变化的服务信息会存放在该队列中
+     */
     private BlockingQueue<ServiceInfo> changedServices = new LinkedBlockingQueue<ServiceInfo>();
 
+    /**
+     * 服务名  与 对应的一组监听器
+     */
     private ConcurrentMap<String, List<EventListener>> observerMap
         = new ConcurrentHashMap<String, List<EventListener>>();
 
@@ -53,9 +60,16 @@ public class EventDispatcher {
             }
         });
 
+        // 该对象从阻塞队列中获取已更新的服务实例 并触发对应的监听器
         executor.execute(new Notifier());
     }
 
+    /**
+     * 针对某个服务信息 创建监听器
+     * @param serviceInfo
+     * @param clusters
+     * @param listener
+     */
     public void addListener(ServiceInfo serviceInfo, String clusters, EventListener listener) {
 
         NAMING_LOGGER.info("[LISTENER] adding " + serviceInfo.getName() + " with " + clusters + " to listener map");
@@ -74,6 +88,7 @@ public class EventDispatcher {
 
         NAMING_LOGGER.info("[LISTENER] removing " + serviceName + " with " + clusters + " from listener map");
 
+        // 服务和集群可以生成某个key 之后可以在map中找到对应的一组监听器
         List<EventListener> observers = observerMap.get(ServiceInfo.getKey(serviceName, clusters));
         if (observers != null) {
             Iterator<EventListener> iter = observers.iterator();
@@ -89,10 +104,20 @@ public class EventDispatcher {
         }
     }
 
+    /**
+     * 通过 service 和 cluster 生成key  并判断是否包含相关监听器
+     * @param serviceName
+     * @param clusters
+     * @return
+     */
     public boolean isSubscribed(String serviceName, String clusters) {
         return observerMap.containsKey(ServiceInfo.getKey(serviceName, clusters));
     }
 
+    /**
+     * 当前订阅的所有服务
+     * @return
+     */
     public List<ServiceInfo> getSubscribeServices() {
         List<ServiceInfo> serviceInfos = new ArrayList<ServiceInfo>();
         for (String key : observerMap.keySet()) {
@@ -109,12 +134,16 @@ public class EventDispatcher {
         changedServices.add(serviceInfo);
     }
 
+    /**
+     * 当注册中心启动时 会开启该任务
+     */
     private class Notifier implements Runnable {
         @Override
         public void run() {
             while (true) {
                 ServiceInfo serviceInfo = null;
                 try {
+                    // 拉取队列中存储的 发生变化的服务信息
                     serviceInfo = changedServices.poll(5, TimeUnit.MINUTES);
                 } catch (Exception ignore) {
                 }
@@ -124,11 +153,13 @@ public class EventDispatcher {
                 }
 
                 try {
+                    // 获取对应的一组监听器
                     List<EventListener> listeners = observerMap.get(serviceInfo.getKey());
 
                     if (!CollectionUtils.isEmpty(listeners)) {
                         for (EventListener listener : listeners) {
                             List<Instance> hosts = Collections.unmodifiableList(serviceInfo.getHosts());
+                            // 生成服务信息更新事件 并触发监听器
                             listener.onEvent(new NamingEvent(serviceInfo.getName(), serviceInfo.getGroupName(), serviceInfo.getClusters(), hosts));
                         }
                     }

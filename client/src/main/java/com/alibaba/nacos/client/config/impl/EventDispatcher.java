@@ -28,6 +28,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * Event subscription and publishing tools.
  *
  * @author Nacos
+ * 事件分发总线
  */
 public class EventDispatcher {
 
@@ -38,6 +39,7 @@ public class EventDispatcher {
      */
     static public void addEventListener(AbstractEventListener listener) {
         for (Class<? extends AbstractEvent> type : listener.interest()) {
+            // 按照事件类型添加到不同的容器中
             getListenerList(type).addIfAbsent(listener);
         }
     }
@@ -81,7 +83,7 @@ public class EventDispatcher {
         return listeners;
     }
 
-    // ========================
+    // ========================   不同事件类型 会管理一组监听器
 
     static final Map<Class<? extends AbstractEvent>, CopyOnWriteArrayList<AbstractEventListener>> LISTENER_MAP
         = new HashMap<Class<? extends AbstractEvent>, CopyOnWriteArrayList<AbstractEventListener>>();

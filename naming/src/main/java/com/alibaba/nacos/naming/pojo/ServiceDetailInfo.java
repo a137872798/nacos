@@ -21,6 +21,7 @@ import java.util.Map;
 /**
  * @author caogu.wyp
  * @version $Id: ServiceDetailInfo.java, v 0.1 2018-09-17 上午10:47 caogu.wyp Exp $$
+ * 某服务的详情信息
  */
 public class ServiceDetailInfo implements Serializable {
 
@@ -28,6 +29,9 @@ public class ServiceDetailInfo implements Serializable {
 
     private String groupName;
 
+    /**
+     * 该服务下有哪些集群
+     */
     private Map<String, ClusterInfo> clusterMap;
 
     private Map<String, String> metadata;

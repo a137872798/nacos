@@ -39,13 +39,25 @@ public final class TaskManager implements TaskManagerMBean {
 
     private static final Logger log = LogUtil.defaultLog;
 
+    /**
+     * 这里维护了所有待执行的任务
+     */
     private final ConcurrentHashMap<String, AbstractTask> tasks = new ConcurrentHashMap<String, AbstractTask>();
 
+    /**
+     * 每个任务有对应的处理器
+     */
     private final ConcurrentHashMap<String, TaskProcessor> taskProcessors =
         new ConcurrentHashMap<String, TaskProcessor>();
 
+    /**
+     * 默认的任务处理器
+     */
     private TaskProcessor defaultTaskProcessor;
 
+    /**
+     * 执行任务的线程
+     */
     Thread processingThread;
 
     private final AtomicBoolean closed = new AtomicBoolean(true);
@@ -160,6 +172,7 @@ public final class TaskManager implements TaskManagerMBean {
         try {
             AbstractTask oldTask = tasks.put(type, task);
             MetricsMonitor.getDumpTaskMonitor().set(tasks.size());
+            // 存在多任务的情况下 尝试将它们结合
             if (null != oldTask) {
                 task.merge(oldTask);
             }
@@ -169,7 +182,7 @@ public final class TaskManager implements TaskManagerMBean {
     }
 
     /**
-     *
+     * 拉取任务 队列中所有任务  并通过对应的 taskProcess 去处理
      */
     protected void process() {
         for (Map.Entry<String, AbstractTask> entry : this.tasks.entrySet()) {
@@ -183,7 +196,7 @@ public final class TaskManager implements TaskManagerMBean {
                         // 任务当前不需要被执行，直接跳过
                         continue;
                     }
-                    // 先将任务从任务Map中删除
+                    // 先将任务从任务Map中删除   将执行的耗时操作挪到锁外执行
                     this.tasks.remove(entry.getKey());
                     MetricsMonitor.getDumpTaskMonitor().set(tasks.size());
                 }
@@ -240,6 +253,10 @@ public final class TaskManager implements TaskManagerMBean {
         }
     }
 
+    /**
+     * 设置任务处理器
+     * @param defaultTaskProcessor
+     */
     public void setDefaultTaskProcessor(TaskProcessor defaultTaskProcessor) {
         this.lock.lock();
         try {

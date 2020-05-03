@@ -155,18 +155,26 @@ public class ParamUtil {
         ParamUtil.defaultNodesPath = defaultNodesPath;
     }
 
+    /**
+     * 从属性种获取 namespace
+     * @param properties
+     * @return
+     */
     public static String parseNamespace(Properties properties) {
         String namespaceTmp = null;
 
+        // 使用使用云空间
         String isUseCloudNamespaceParsing =
             properties.getProperty(PropertyKeyConst.IS_USE_CLOUD_NAMESPACE_PARSING,
                 System.getProperty(SystemPropertyKeyConst.IS_USE_CLOUD_NAMESPACE_PARSING,
                     String.valueOf(Constants.DEFAULT_USE_CLOUD_NAMESPACE_PARSING)));
 
         if (Boolean.parseBoolean(isUseCloudNamespaceParsing)) {
+            // param1 不存在时 调用param2 并返回
             namespaceTmp = TemplateUtils.stringBlankAndThenExecute(namespaceTmp, new Callable<String>() {
                 @Override
                 public String call() {
+                    // 这里尝试从 TenantUtil 获取租户id
                     return TenantUtil.getUserTenantForAcm();
                 }
             });
@@ -174,12 +182,16 @@ public class ParamUtil {
             namespaceTmp = TemplateUtils.stringBlankAndThenExecute(namespaceTmp, new Callable<String>() {
                 @Override
                 public String call() {
+                    // 尝试获取 aliware 的namespace
                     String namespace = System.getenv(PropertyKeyConst.SystemEnv.ALIBABA_ALIWARE_NAMESPACE);
                     return StringUtils.isNotBlank(namespace) ? namespace : StringUtils.EMPTY;
                 }
             });
         }
 
+        // 上面是云相关的 可以忽略
+
+        // 还是为空时  获取系统变量 "namespace"
         if (StringUtils.isBlank(namespaceTmp)) {
             namespaceTmp = properties.getProperty(PropertyKeyConst.NAMESPACE);
         }

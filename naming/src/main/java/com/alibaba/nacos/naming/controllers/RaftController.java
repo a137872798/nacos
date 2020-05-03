@@ -66,6 +66,13 @@ public class RaftController {
     @Autowired
     private RaftCore raftCore;
 
+    /**
+     * 处理投票请求
+     * @param request  包含了某个想成为leader的节点
+     * @param response
+     * @return
+     * @throws Exception
+     */
     @PostMapping("/vote")
     public JSONObject vote(HttpServletRequest request, HttpServletResponse response) throws Exception {
 
@@ -189,6 +196,13 @@ public class RaftController {
         return result;
     }
 
+    /**
+     * 代表 raft集群写入某个数据
+     * @param request
+     * @param response
+     * @return
+     * @throws Exception
+     */
     @PostMapping("/datum/commit")
     public String onPublish(HttpServletRequest request, HttpServletResponse response) throws Exception {
 

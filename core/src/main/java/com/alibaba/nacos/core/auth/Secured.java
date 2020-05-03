@@ -25,6 +25,7 @@ import java.lang.annotation.RetentionPolicy;
  *
  * @author nkorange
  * @since 1.2.0
+ * 该注解标明调用本方法的req需要做认证
  */
 @Retention(RetentionPolicy.RUNTIME)
 public @interface Secured {

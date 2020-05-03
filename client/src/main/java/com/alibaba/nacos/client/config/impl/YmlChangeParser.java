@@ -53,6 +53,12 @@ public class YmlChangeParser extends AbstractConfigChangeParser {
         return result;
     }
 
+    /**
+     * 这里不细看了 应该是去除什么特殊标记
+     * @param result
+     * @param source
+     * @param path
+     */
     private void buildFlattenedMap(Map<String, Object> result, Map<String, Object> source, String path) {
         for (Iterator<Map.Entry<String, Object>> itr = source.entrySet().iterator(); itr.hasNext(); ) {
             Map.Entry<String, Object> e = itr.next();

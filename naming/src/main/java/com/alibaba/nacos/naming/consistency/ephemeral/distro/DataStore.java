@@ -30,10 +30,14 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * @author nkorange
  * @since 1.0.0
+ * 存储数据的仓库
  */
 @Component
 public class DataStore {
 
+    /**
+     * 仓库实体    Datum 对象就是一个键值对     Datum默认情况下是  instances  代表一组节点实例  
+     */
     private Map<String, Datum> dataMap = new ConcurrentHashMap<>(1024);
 
     public void put(String key, Datum value) {
@@ -56,6 +60,11 @@ public class DataStore {
         return dataMap.containsKey(key);
     }
 
+    /**
+     * 根据一组key 批量拉取数据
+     * @param keys
+     * @return
+     */
     public Map<String, Datum> batchGet(List<String> keys) {
         Map<String, Datum> map = new HashMap<>(128);
         for (String key : keys) {
@@ -68,6 +77,10 @@ public class DataStore {
         return map;
     }
 
+    /**
+     * 遍历仓库中所有数据 找到 instances 并计算总和
+     * @return
+     */
     public int getInstanceCount() {
         int count = 0;
         for (Map.Entry<String, Datum> entry : dataMap.entrySet()) {

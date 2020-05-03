@@ -29,6 +29,7 @@ import java.lang.reflect.Type;
 
 /**
  * @author nkorange
+ * 实现 ObjectDeserializer, ObjectSerializer 可以定制序列化 反序列化方式
  */
 public class JsonAdapter implements ObjectDeserializer, ObjectSerializer {
 
@@ -41,6 +42,14 @@ public class JsonAdapter implements ObjectDeserializer, ObjectSerializer {
         return INSTANCE;
     }
 
+    /**
+     * 通过找到 type信息 将整个json串 定义成某个 checker 实现类
+     * @param parser
+     * @param type
+     * @param fieldName
+     * @param <T>
+     * @return
+     */
     @SuppressWarnings("unchecked")
     @Override
     public <T> T deserialze(DefaultJSONParser parser, Type type, Object fieldName) {

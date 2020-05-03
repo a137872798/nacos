@@ -36,6 +36,7 @@ import java.util.Map;
  *
  * @author nkorange
  * @since 1.0.0
+ * 一组instance
  */
 public class Instances implements Record {
 
@@ -50,6 +51,9 @@ public class Instances implements Record {
         }
     }
 
+    /**
+     * 内部一组服务实例
+     */
     private List<Instance> instanceList = new ArrayList<>();
 
     public List<Instance> getInstanceList() {

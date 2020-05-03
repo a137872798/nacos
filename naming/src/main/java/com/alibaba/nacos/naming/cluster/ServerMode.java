@@ -31,6 +31,7 @@ package com.alibaba.nacos.naming.cluster;
  *
  * @author nkorange
  * @since 1.0.0
+ * 代表该注册中心 基于什么模式实现  可以通过 AP 和 CP
  */
 public enum ServerMode {
     /**

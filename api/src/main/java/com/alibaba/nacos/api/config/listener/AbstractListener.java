@@ -27,6 +27,7 @@ public abstract class AbstractListener implements Listener {
 
     /**
      * Use default executor
+     * 应该是默认在本线程执行回调
      */
     @Override
     public Executor getExecutor() {

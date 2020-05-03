@@ -54,6 +54,8 @@ import static com.alibaba.nacos.core.utils.SystemUtils.LOCAL_IP;
  * Async notify service
  *
  * @author Nacos
+ * 该对象负责同步整个集群的数据  在nacos-config中 发布配置 修改配置等 都是发往单个节点 这里是采用异步的方式同步集群的数据
+ * 也就是可能会存在失败的情况   (这样的操作不是标准的CP实现  也不是AP)
  */
 @Service
 public class AsyncNotifyService extends AbstractEventListener {
@@ -66,6 +68,10 @@ public class AsyncNotifyService extends AbstractEventListener {
         return types;
     }
 
+    /**
+     * 检测到配置数据发生变化时
+     * @param event event
+     */
     @Override
     public void onEvent(Event event) {
 
@@ -77,6 +83,7 @@ public class AsyncNotifyService extends AbstractEventListener {
             String group = evt.group;
             String tenant = evt.tenant;
             String tag = evt.tag;
+            // 找到集群内 所有节点
             List<?> ipList = serverListService.getServerList();
 
             // 其实这里任何类型队列都可以
@@ -112,6 +119,9 @@ public class AsyncNotifyService extends AbstractEventListener {
 
     private ServerListService serverListService;
 
+    /**
+     * 通过集群中单节点修改配置信息 能够通知到集群其他节点  (包含自身)
+     */
     class AsyncTask implements Runnable {
 
         public AsyncTask(CloseableHttpAsyncClient httpclient, Queue<NotifySingleTask> queue) {
@@ -128,21 +138,25 @@ public class AsyncNotifyService extends AbstractEventListener {
             while (!queue.isEmpty()) {
                 NotifySingleTask task = queue.poll();
                 String targetIp = task.getTargetIP();
+                // 确保要通知的节点
                 if (serverListService.getServerList().contains(
                     targetIp)) {
-                    // 启动健康检查且有不监控的ip则直接把放到通知队列，否则通知
+                    // 代表目标节点暂时处于不可用状态
                     if (serverListService.isHealthCheck()
                         && ServerListService.getServerListUnhealth().contains(targetIp)) {
                         // target ip 不健康，则放入通知列表中
                         ConfigTraceService.logNotifyEvent(task.getDataId(), task.getGroup(), task.getTenant(), null,
                             task.getLastModified(),
-                            LOCAL_IP, ConfigTraceService.NOTIFY_EVENT_UNHEALTH, 0, task.target);
+                            LOCAL_IP, ConfigTraceService.NOTIFY_EVENT_UNHEALTH, 0, task.target);  // target 就是目标的ip
                         // get delay time and set fail count to the task
+                        // 在一定延时后重新执行
                         asyncTaskExecute(task);
                     } else {
+                        // 发出请求 并通过callback 处理res
                         HttpGet request = new HttpGet(task.url);
                         request.setHeader(NotifyService.NOTIFY_HEADER_LAST_MODIFIED,
                             String.valueOf(task.getLastModified()));
+                        // 标明本次请求从哪个节点发出
                         request.setHeader(NotifyService.NOTIFY_HEADER_OP_HANDLE_IP, LOCAL_IP);
                         if (task.isBeta) {
                             request.setHeader("isBeta", "true");
@@ -158,7 +172,9 @@ public class AsyncNotifyService extends AbstractEventListener {
 
     }
 
+
     private void asyncTaskExecute(NotifySingleTask task) {
+        // 根据当前失败次数 预估重试时间
         int delay = getDelayTime(task);
         Queue<NotifySingleTask> queue = new LinkedList<NotifySingleTask>();
         queue.add(task);
@@ -167,6 +183,9 @@ public class AsyncNotifyService extends AbstractEventListener {
     }
 
 
+    /**
+     * 处理收到的res
+     */
     class AsyncNotifyCallBack implements FutureCallback<HttpResponse> {
 
         public AsyncNotifyCallBack(CloseableHttpAsyncClient httpClient, NotifySingleTask task) {
@@ -174,18 +193,25 @@ public class AsyncNotifyService extends AbstractEventListener {
             this.httpClient = httpClient;
         }
 
+        /**
+         * 处理收到的结果
+         * @param response
+         */
         @Override
         public void completed(HttpResponse response) {
 
             long delayed = System.currentTimeMillis() - task.getLastModified();
 
             if (response.getStatusLine().getStatusCode() == HttpStatus.SC_OK) {
+                // 打印日志
                 ConfigTraceService.logNotifyEvent(task.getDataId(),
                     task.getGroup(), task.getTenant(), null, task.getLastModified(),
                     LOCAL_IP,
                     ConfigTraceService.NOTIFY_EVENT_OK, delayed,
                     task.target);
             } else {
+                // 其余情况延迟执行任务    即使配置第一时间没有成功同步 一旦为配置设置监听器(开启长轮询后)  还是会检测到配置的变化的
+                // 无非就是慢一点 可以接收
                 log.error("[notify-error] target:{} dataId:{} group:{} ts:{} code:{}",
                     task.target, task.getDataId(), task.getGroup(), task.getLastModified(), response.getStatusLine().getStatusCode());
                 ConfigTraceService.logNotifyEvent(task.getDataId(),

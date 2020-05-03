@@ -23,6 +23,7 @@ import java.lang.annotation.RetentionPolicy;
  *
  * @author nkorange
  * @since 1.0.0
+ * 标识某个方法是否应该被重定向
  */
 @Retention(RetentionPolicy.RUNTIME)
 public @interface CanDistro {

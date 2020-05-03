@@ -27,6 +27,7 @@ import java.util.Map;
 
 /**
  * @author nacos
+ * 负责同步服务状态
  */
 public class ServiceStatusSynchronizer implements Synchronizer {
     @Override
@@ -37,6 +38,7 @@ public class ServiceStatusSynchronizer implements Synchronizer {
 
         Map<String,String> params = new HashMap<String, String>(10);
 
+        // 携带2个参数
         params.put("statuses", msg.getData());
         params.put("clientIP", NetUtils.localServer());
 
@@ -67,6 +69,12 @@ public class ServiceStatusSynchronizer implements Synchronizer {
 
     }
 
+    /**
+     * 指定某个服务器ip 并根据key 获取对应的数据
+     * @param serverIP source server address
+     * @param key      message key    key 是由namespace 和 service组合成的
+     * @return
+     */
     @Override
     public Message get(String serverIP, String key) {
         if(serverIP == null) {
@@ -82,6 +90,7 @@ public class ServiceStatusSynchronizer implements Synchronizer {
             if (Loggers.SRV_LOG.isDebugEnabled()) {
                 Loggers.SRV_LOG.debug("[STATUS-SYNCHRONIZE] sync service status from: {}, service: {}", serverIP, key);
             }
+            //
             result = NamingProxy.reqAPI(RunningConfig.getContextPath()
                 + UtilsAndCommons.NACOS_NAMING_CONTEXT + "/instance/" + "statuses", params, serverIP);
         } catch (Exception e) {

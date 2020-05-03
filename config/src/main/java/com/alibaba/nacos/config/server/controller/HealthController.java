@@ -30,7 +30,7 @@ import static com.alibaba.nacos.core.utils.SystemUtils.LOCAL_IP;
 
 /**
  * health service
- *
+ * 对外暴露当前节点的健康状态
  * @author Nacos
  */
 @RestController
@@ -61,6 +61,7 @@ public class HealthController {
         if (dbStatus.contains(heathUpStr) && ServerListService.isAddressServerHealth() && ServerListService
             .isInIpList()) {
             sb.append(heathUpStr);
+            // 代表主从库中 某个从库无法连接
         } else if (dbStatus.contains(heathWarnStr) && ServerListService.isAddressServerHealth() && ServerListService
             .isInIpList()) {
             sb.append("WARN:");

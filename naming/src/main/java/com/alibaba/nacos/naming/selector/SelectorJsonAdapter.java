@@ -36,6 +36,7 @@ import java.lang.reflect.Type;
  *
  * @author nkorange
  * @since 0.7.0
+ * ObjectDeserializer ObjectSerializer 该方法用于定制序列化逻辑  配合 @JsonField注解
  */
 public class SelectorJsonAdapter implements ObjectDeserializer, ObjectSerializer {
 
@@ -48,6 +49,14 @@ public class SelectorJsonAdapter implements ObjectDeserializer, ObjectSerializer
         return INSTANCE;
     }
 
+    /**
+     * 反序列化某个字段
+     * @param parser
+     * @param type
+     * @param fieldName
+     * @param <T>
+     * @return
+     */
     @Override
     public <T> T deserialze(DefaultJSONParser parser, Type type, Object fieldName) {
 
@@ -57,8 +66,10 @@ public class SelectorJsonAdapter implements ObjectDeserializer, ObjectSerializer
             return null;
         }
 
+        // 找到 type字段
         String checkType = jsonObj.getString("type");
 
+        // 如果 json串携带的type是label 就序列化成 labelSelector 反之序列化成 NoneSelector
         if (StringUtils.equals(checkType, SelectorType.label.name())) {
             return (T) JSON.parseObject(jsonObj.toJSONString(), LabelSelector.class);
         }
@@ -88,6 +99,7 @@ public class SelectorJsonAdapter implements ObjectDeserializer, ObjectSerializer
 
         writer.writeFieldValue(',', "type", selector.getType());
 
+        // 如果是labelSelector 在写入时追加一个 labels 属性
         if (StringUtils.equals(selector.getType(), SelectorType.label.name())) {
             LabelSelector labelSelector = (LabelSelector) selector;
             writer.writeFieldValue(',', "labels", JSON.toJSONString(labelSelector.getLabels()));

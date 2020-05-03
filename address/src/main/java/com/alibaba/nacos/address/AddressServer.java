@@ -23,6 +23,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  *
  * @author nacos
  * @since 1.1.0
+ * 以spring boot 的方式启动一个简单的地址服务 用于提供获取加工地址的基本功能
+ * 避免以硬编码的方式设置集群的地址
  */
 @SpringBootApplication(scanBasePackages = "com.alibaba.nacos")
 public class AddressServer {

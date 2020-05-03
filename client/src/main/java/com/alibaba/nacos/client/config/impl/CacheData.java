@@ -37,6 +37,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * Listner Management
  *
  * @author Nacos
+ * 缓存数据
  */
 public class CacheData {
 
@@ -50,6 +51,10 @@ public class CacheData {
         this.isInitializing = isInitializing;
     }
 
+    /**
+     * 进行MD5 加密后的数据
+     * @return
+     */
     public String getMd5() {
         return md5;
     }
@@ -62,6 +67,10 @@ public class CacheData {
         return content;
     }
 
+    /**
+     * 设置缓存数据
+     * @param content
+     */
     public void setContent(String content) {
         this.content = content;
         this.md5 = getMd5String(this.content);
@@ -80,11 +89,13 @@ public class CacheData {
      * if CacheData already set new content, Listener should init lastCallMd5 by CacheData.md5
      *
      * @param listener listener
+     *                 为缓存数据添加一个监听器
      */
     public void addListener(Listener listener) {
         if (null == listener) {
             throw new IllegalArgumentException("listener is null");
         }
+        // ManagerListenerWrap 监听器内部包含了缓存对象的数据
         ManagerListenerWrap wrap = (listener instanceof AbstractConfigChangeListener) ?
             new ManagerListenerWrap(listener, md5, content) : new ManagerListenerWrap(listener, md5);
 
@@ -168,6 +179,9 @@ public class CacheData {
         return "CacheData [" + dataId + ", " + group + "]";
     }
 
+    /**
+     * 与当前配置不相同的监听器会收到通知
+     */
     void checkListenerMd5() {
         for (ManagerListenerWrap wrap : listeners) {
             if (!md5.equals(wrap.lastCallMd5)) {
@@ -176,6 +190,15 @@ public class CacheData {
         }
     }
 
+    /**
+     * 代表某个被监听的配置发生了变化
+     * @param dataId
+     * @param group
+     * @param content 本次最新数据
+     * @param type
+     * @param md5 传入最新数据对应的md5加密结果
+     * @param listenerWrap
+     */
     private void safeNotifyListener(final String dataId, final String group, final String content, final String type,
                                     final String md5, final ManagerListenerWrap listenerWrap) {
         final Listener listener = listenerWrap.listener;
@@ -192,27 +215,34 @@ public class CacheData {
                         LOGGER.info("[{}] [notify-context] dataId={}, group={}, md5={}", name, dataId, group, md5);
                     }
                     // 执行回调之前先将线程classloader设置为具体webapp的classloader，以免回调方法中调用spi接口是出现异常或错用（多应用部署才会有该问题）。
+                    // listener 很可能是用户自定义实现 并通过SPI 机制进行加载的
                     Thread.currentThread().setContextClassLoader(appClassLoader);
 
                     ConfigResponse cr = new ConfigResponse();
                     cr.setDataId(dataId);
                     cr.setGroup(group);
                     cr.setContent(content);
+                    // 使用过滤器处理res
                     configFilterChainManager.doFilter(null, cr);
                     String contentTmp = cr.getContent();
+                    // 使用最新配置通知监听器
                     listener.receiveConfigInfo(contentTmp);
 
                     // compare lastContent and content
                     if (listener instanceof AbstractConfigChangeListener) {
+                        // 解析出来的map  key 是配置名  value 是配置名+配置值(新旧)+类型(delete/modify/add)
                         Map data = ConfigChangeHandler.getInstance().parseChangeData(listenerWrap.lastContent, content, type);
                         ConfigChangeEvent event = new ConfigChangeEvent(data);
+                        // 触发监听事件
                         ((AbstractConfigChangeListener)listener).receiveConfigChange(event);
+                        // 更新配置
                         listenerWrap.lastContent = content;
                     }
 
                     listenerWrap.lastCallMd5 = md5;
                     LOGGER.info("[{}] [notify-ok] dataId={}, group={}, md5={}, listener={} ", name, dataId, group, md5,
                         listener);
+                // 异常仅打印日志
                 } catch (NacosException de) {
                     LOGGER.error("[{}] [notify-error] dataId={}, group={}, md5={}, listener={} errCode={} errMsg={}", name,
                         dataId, group, md5, listener, de.getErrCode(), de.getErrMsg());
@@ -225,6 +255,7 @@ public class CacheData {
             }
         };
 
+        // 使用线程池执行任务 否则在本线程执行
         final long startNotify = System.currentTimeMillis();
         try {
             if (null != listener.getExecutor()) {
@@ -247,6 +278,7 @@ public class CacheData {
 
     private String loadCacheContentFromDiskLocal(String name, String dataId, String group, String tenant) {
         String content = LocalConfigInfoProcessor.getFailover(name, dataId, group, tenant);
+        // 如果没有降级数据 则尝试从快照中获取
         content = (null != content) ? content
             : LocalConfigInfoProcessor.getSnapshot(name, dataId, group, tenant);
         return content;
@@ -263,6 +295,7 @@ public class CacheData {
         this.tenant = TenantUtil.getUserTenantForAcm();
         listeners = new CopyOnWriteArrayList<ManagerListenerWrap>();
         this.isInitializing = true;
+        // 配置首先尝试从本地获取
         this.content = loadCacheContentFromDiskLocal(name, dataId, group, tenant);
         this.md5 = getMd5String(content);
     }
@@ -279,6 +312,7 @@ public class CacheData {
         this.tenant = tenant;
         listeners = new CopyOnWriteArrayList<ManagerListenerWrap>();
         this.isInitializing = true;
+        // 初始化缓存对象时 先尝试从本地读取 对应的配置信息
         this.content = loadCacheContentFromDiskLocal(name, dataId, group, tenant);
         this.md5 = getMd5String(content);
     }
@@ -307,6 +341,9 @@ public class CacheData {
     private String type;
 }
 
+/**
+ * 监听器包装对象
+ */
 class ManagerListenerWrap {
     final Listener listener;
     String lastCallMd5 = CacheData.getMd5String(null);

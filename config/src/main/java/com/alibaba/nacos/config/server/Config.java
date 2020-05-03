@@ -23,6 +23,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * Config main
  *
  * @author Nacos
+ * nacos 通过该模块提供配置中心
  */
 @EnableScheduling
 @SpringBootApplication

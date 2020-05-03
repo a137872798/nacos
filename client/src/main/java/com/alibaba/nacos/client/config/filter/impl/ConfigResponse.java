@@ -25,6 +25,7 @@ import java.util.Map;
  * Config Response
  *
  * @author Nacos
+ * 配置结果包含了一组参数
  */
 public class ConfigResponse implements IConfigResponse {
 

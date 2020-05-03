@@ -24,10 +24,14 @@ import com.alibaba.nacos.naming.misc.SwitchDomain;
 import org.apache.commons.lang3.RandomUtils;
 
 /**
+ * 心跳检测任务对象   该对象是针对集群创建的
  * @author nacos
  */
 public class HealthCheckTask implements Runnable {
 
+    /**
+     * 本次心跳任务关于哪个集群
+     */
     private Cluster cluster;
 
     private long checkRTNormalized = -1;
@@ -47,6 +51,9 @@ public class HealthCheckTask implements Runnable {
     @JSONField(serialize = false)
     private SwitchDomain switchDomain;
 
+    /**
+     * 该对象负责执行心跳任务   内含多种方式 (TCP,HTTP,MYSQL 等)   默认采用TCP
+     */
     @JSONField(serialize = false)
     private HealthCheckProcessor healthCheckProcessor;
 
@@ -65,12 +72,14 @@ public class HealthCheckTask implements Runnable {
         checkRTWorst = 0L;
     }
 
+    // 定期触发该方法
     @Override
     public void run() {
 
         try {
             if (distroMapper.responsible(cluster.getService().getName()) &&
                 switchDomain.isHealthCheckEnabled(cluster.getService().getName())) {
+                // 交由处理器执行本任务
                 healthCheckProcessor.process(this);
                 if (Loggers.EVT_LOG.isDebugEnabled()) {
                     Loggers.EVT_LOG.debug("[HEALTH-CHECK] schedule health check task: {}", cluster.getService().getName());
@@ -80,6 +89,7 @@ public class HealthCheckTask implements Runnable {
             Loggers.SRV_LOG.error("[HEALTH-CHECK] error while process health check for {}:{}",
                 cluster.getService().getName(), cluster.getName(), e);
         } finally {
+            // 执行下次任务
             if (!cancelled) {
                 HealthCheckReactor.scheduleCheck(this);
 

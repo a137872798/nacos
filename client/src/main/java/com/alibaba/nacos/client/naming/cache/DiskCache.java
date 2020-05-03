@@ -36,6 +36,7 @@ import static com.alibaba.nacos.client.utils.LogUtils.NAMING_LOGGER;
 
 /**
  * @author xuanyin
+ * 将服务实例信息写入到文件
  */
 public class DiskCache {
 
@@ -44,7 +45,7 @@ public class DiskCache {
         try {
             makeSureCacheDirExists(dir);
 
-
+            // 按服务名称生成文件
             File file = new File(dir, dom.getKeyEncoded());
             if (!file.exists()) {
                 // add another !file.exists() to avoid conflicted creating-new-file from multi-instances
@@ -57,13 +58,14 @@ public class DiskCache {
 
             String json = dom.getJsonFromServer();
 
+            // 写入json数据  为什么不轻量化啊
             if (StringUtils.isEmpty(json)) {
                 json = JSON.toJSONString(dom);
             }
 
             keyContentBuffer.append(json);
 
-            //Use the concurrent API to ensure the consistency.
+            //Use the concurrent API to ensure the consistency  就是写入文件通道
             ConcurrentDiskUtil.writeFileContent(file, keyContentBuffer.toString(), Charset.defaultCharset().toString());
 
         } catch (Throwable e) {

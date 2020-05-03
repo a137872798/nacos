@@ -30,6 +30,9 @@ import java.util.Map;
  */
 public class OverrideParameterRequestWrapper extends HttpServletRequestWrapper {
 
+    /**
+     * 当使用一个 request 初始化该对象时 会通过req内部的param填充该对象
+     */
     private Map<String, String[]> params = new HashMap<>();
 
     /**
@@ -47,6 +50,13 @@ public class OverrideParameterRequestWrapper extends HttpServletRequestWrapper {
         return new OverrideParameterRequestWrapper(request);
     }
 
+    /**
+     * 额外追加一组参数
+     * @param request
+     * @param name
+     * @param value
+     * @return
+     */
     public static OverrideParameterRequestWrapper buildRequest(HttpServletRequest request, String name, String value) {
         OverrideParameterRequestWrapper requestWrapper = new OverrideParameterRequestWrapper(request);
         requestWrapper.addParameter(name, value);

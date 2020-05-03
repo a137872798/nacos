@@ -30,24 +30,39 @@ public class SwitchDomain implements Record, Cloneable {
 
     private List<String> masters;
 
+    /**
+     * 每个地址的权重值   地址有一个额外的权重  然后server 本身还有一个权重
+     */
     private Map<String, Integer> adWeightMap = new HashMap<>();
 
     private long defaultPushCacheMillis = TimeUnit.SECONDS.toMillis(10);
 
+    /**
+     * 推荐的nacos-naming client 服务实例续约时间
+     */
     private long clientBeatInterval = TimeUnit.SECONDS.toMillis(5);
 
     private long defaultCacheMillis = TimeUnit.SECONDS.toMillis(3);
 
     private float distroThreshold = 0.7F;
 
+    /**
+     * 是否要检测其他节点心跳  对应 ClientBeatCheckTask
+     */
     private boolean healthCheckEnabled = true;
 
     private boolean autoChangeHealthCheckEnabled = true;
 
     private boolean distroEnabled = true;
 
+    /**
+     * 是否允许独立存在
+     */
     private boolean enableStandalone = true;
 
+    /**
+     * 能否往这里发送心跳包
+     */
     private boolean pushEnabled = true;
 
     private int checkTimes = 3;
@@ -70,10 +85,14 @@ public class SwitchDomain implements Record, Cloneable {
 
     private boolean lightBeatEnabled = true;
 
+    /**
+     * key: 代表url  value：代表响应code  命中该容器的请求会直接返回 code 而不进行处理
+     */
     private Map<String, Integer> limitedUrlMap = new HashMap<>();
 
     /**
      * The server is regarded as expired if its two reporting interval is lagger than this variable.
+     * 如果收到2次心跳包的时间超过该值 就认为该server 已经失活
      */
     private long distroServerExpiredMillis = TimeUnit.SECONDS.toMillis(10);
 
@@ -85,10 +104,19 @@ public class SwitchDomain implements Record, Cloneable {
     private String pushPythonVersion = "0.4.3";
     private String pushCVersion = "1.0.12";
 
+    /**
+     * 是否开启权限认证
+     */
     private boolean enableAuthentication = false;
 
+    /**
+     * 代表本服务器状态发生了变化
+     */
     private String overriddenServerStatus = null;
 
+    /**
+     * 是否允许接收短暂存在的服务  当 DistroConsistencyService 启动时会与其他服务节点同步数据  如果发现了某个实例没有对应的监听器时 就需要判断这个标识
+     */
     private boolean defaultInstanceEphemeral = true;
 
     public boolean isEnableAuthentication() {
@@ -107,6 +135,9 @@ public class SwitchDomain implements Record, Cloneable {
         this.healthCheckWhiteList = healthCheckWhiteList;
     }
 
+    /**
+     * 不需要校验的白名单
+     */
     private Set<String> healthCheckWhiteList = new HashSet<>();
 
     public long getClientBeatInterval() {
@@ -162,6 +193,10 @@ public class SwitchDomain implements Record, Cloneable {
         this.masters = masters;
     }
 
+    /**
+     * 每个 服务器  对应的 额外权重   ad (addition)
+     * @return
+     */
     public Map<String, Integer> getAdWeightMap() {
         return adWeightMap;
     }
@@ -358,6 +393,7 @@ public class SwitchDomain implements Record, Cloneable {
         this.defaultInstanceEphemeral = defaultInstanceEphemeral;
     }
 
+    // 是否使用轻量级心跳
     public boolean isLightBeatEnabled() {
         return lightBeatEnabled;
     }
@@ -381,6 +417,9 @@ public class SwitchDomain implements Record, Cloneable {
         return null;
     }
 
+    /**
+     * 判断是否健康的条件值
+     */
     public interface HealthParams {
         /**
          * Maximum RT
@@ -403,6 +442,8 @@ public class SwitchDomain implements Record, Cloneable {
          */
         float getFactor();
     }
+
+    // 下面这3个参数的 MinRT MaxRT 是怎么来的 随便填写的么???
 
     public static class HttpHealthParams implements HealthParams {
 
@@ -473,6 +514,7 @@ public class SwitchDomain implements Record, Cloneable {
             this.min = min;
         }
     }
+
 
     public static class TcpHealthParams implements HealthParams {
         private int max = 5000;

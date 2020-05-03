@@ -32,6 +32,7 @@ public interface HttpAgent {
      * start to get nacos ip list
      * @return Nothing.
      * @throws NacosException on get ip list error.
+     * 获取 服务器IP列表
      */
     void start() throws NacosException;
 
@@ -44,8 +45,8 @@ public interface HttpAgent {
      * @param readTimeoutMs http timeout
      * @return HttpResult http response
      * @throws IOException If an input or output exception occurred
+     * 针对给定的地址 发起 http 请求  并获取结果
      */
-
     HttpResult httpGet(String path, List<String> headers, List<String> paramValues, String encoding, long readTimeoutMs) throws IOException;
 
     /**
@@ -57,6 +58,7 @@ public interface HttpAgent {
      * @param readTimeoutMs http timeout
      * @return HttpResult http response
      * @throws IOException If an input or output exception occurred
+     * 以post 形式发起请求
      */
     HttpResult httpPost(String path, List<String> headers, List<String> paramValues, String encoding, long readTimeoutMs) throws IOException;
 
@@ -87,6 +89,7 @@ public interface HttpAgent {
     /**
      * get tenant
      * @return String
+     * 获取租户信息
      */
     String getTenant();
 

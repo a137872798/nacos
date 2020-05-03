@@ -22,6 +22,7 @@ import com.alibaba.fastjson.JSON;
  * @author: universefeeler
  * @Date: 2019/05/19 15:51
  * @Description:
+ * 集群状态视图对象  这里有涉及到任期 以及投票的概念
  */
 public class ClusterStateView{
 

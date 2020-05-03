@@ -20,6 +20,7 @@ package com.alibaba.nacos.api.selector;
  *
  * @author nkorange
  * @since 0.7.0
+ * 基于表达式选择
  */
 public class ExpressionSelector extends AbstractSelector {
 

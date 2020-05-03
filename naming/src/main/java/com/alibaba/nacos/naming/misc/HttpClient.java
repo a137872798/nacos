@@ -52,6 +52,7 @@ import java.util.zip.GZIPInputStream;
 
 /**
  * @author nacos
+ * 用于跟其他服务器交互用的
  */
 public class HttpClient {
     private static final int TIME_OUT_MILLIS = 10000;
@@ -139,6 +140,15 @@ public class HttpClient {
         asyncHttpRequest(url, headers, paramValues, handler, HttpMethod.DELETE);
     }
 
+    /**
+     * 异步发送http请求
+     * @param url
+     * @param headers
+     * @param paramValues
+     * @param handler   代表如何处理异步结果
+     * @param method
+     * @throws Exception
+     */
     public static void asyncHttpRequest(String url, List<String> headers, Map<String, String> paramValues, AsyncCompletionHandler handler, String method) throws Exception {
         if (!MapUtils.isEmpty(paramValues)) {
             String encodedContent = encodingParams(paramValues, "UTF-8");
@@ -456,6 +466,7 @@ public class HttpClient {
                 + encoding);
         conn.addRequestProperty("Accept-Charset", encoding);
         conn.addRequestProperty(HttpHeaderConsts.CLIENT_VERSION_HEADER, VersionUtils.VERSION);
+        // 从 nacos-naming server 发送的请求会携带 特殊的请求头
         conn.addRequestProperty(HttpHeaderConsts.USER_AGENT_HEADER, UtilsAndCommons.SERVER_VERSION);
     }
 

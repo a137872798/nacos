@@ -35,6 +35,9 @@ import java.util.concurrent.TimeUnit;
  */
 public class ClientBeatProcessor implements Runnable {
     public static final long CLIENT_BEAT_TIMEOUT = TimeUnit.SECONDS.toMillis(15);
+    /**
+     * 针对某个节点的 测量数据  每个节点应该对应一个 ClientBeatProcessor
+     */
     private RsInfo rsInfo;
     private Service service;
 
@@ -72,11 +75,13 @@ public class ClientBeatProcessor implements Runnable {
         Cluster cluster = service.getClusterMap().get(clusterName);
         List<Instance> instances = cluster.allIPs(true);
 
+        // 从集群下找到该实例信息
         for (Instance instance : instances) {
             if (instance.getIp().equals(ip) && instance.getPort() == port) {
                 if (Loggers.EVT_LOG.isDebugEnabled()) {
                     Loggers.EVT_LOG.debug("[CLIENT-BEAT] refresh beat: {}", rsInfo.toString());
                 }
+                // 执行该任务时将本节点标记成 健康节点
                 instance.setLastBeat(System.currentTimeMillis());
                 if (!instance.isMarked()) {
                     if (!instance.isHealthy()) {

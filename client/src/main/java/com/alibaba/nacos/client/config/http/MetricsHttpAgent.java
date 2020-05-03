@@ -27,6 +27,7 @@ import java.util.List;
  * MetricsHttpAgent
  *
  * @author Nacos
+ * 装饰器模式 也就是在 ServerHttpAgent的基础上做一些统计工作
  */
 public class MetricsHttpAgent implements HttpAgent {
     private HttpAgent httpAgent;

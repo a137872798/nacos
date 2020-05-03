@@ -42,6 +42,7 @@ import static com.alibaba.nacos.config.server.utils.LogUtil.fatalLog;
  *
  * @author hexu.hxy
  * @date 2018/03/05
+ * 组容量相关的持久层
  */
 @Service
 public class GroupCapacityPersistService {

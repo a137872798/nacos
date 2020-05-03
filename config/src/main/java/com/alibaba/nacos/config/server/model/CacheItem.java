@@ -130,6 +130,9 @@ public class CacheItem {
     public volatile long lastModifiedTs4Beta;
     public volatile Map<String, String> tagMd5;
     public volatile Map<String, Long> tagLastModifiedTs;
+    /**
+     * 基于 synchronized 实现的同步锁
+     */
     public SimpleReadWriteLock rwLock = new SimpleReadWriteLock();
     public String type;
 

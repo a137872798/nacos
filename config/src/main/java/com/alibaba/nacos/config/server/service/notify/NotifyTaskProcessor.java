@@ -45,8 +45,16 @@ public class NotifyTaskProcessor implements TaskProcessor {
         this.serverListService = serverListService;
     }
 
+    /**
+     * 处理 NotifyTask 任务 拉取最新的数据
+     * @param taskType task type    任务类型
+     * @param task     task         待处理的任务
+     * @return
+     * 只要有某个server 修改失败 则进行重试
+     */
     @Override
     public boolean process(String taskType, AbstractTask task) {
+        // 从任务对象中得知 哪个配置发生了变化
         NotifyTask notifyTask = (NotifyTask)task;
         String dataId = notifyTask.getDataId();
         String group = notifyTask.getGroup();
@@ -55,6 +63,7 @@ public class NotifyTaskProcessor implements TaskProcessor {
 
         boolean isok = true;
 
+        // 这里采取全量通知的方式 某个节点没有通知到则任务失败 同时任务在一定延时后会重新执行
         for (String ip : serverListService.getServerList()) {
             isok = notifyToDump(dataId, group, tenant, lastModified, ip) && isok;
         }
@@ -68,14 +77,18 @@ public class NotifyTaskProcessor implements TaskProcessor {
         long delayed = System.currentTimeMillis() - lastModified;
         try {
             // XXX 為了方便系统beta，不改变notify.do接口，新增lastModifed参数通过Http header传递
+            // 追加特殊的请求头
             List<String> headers = Arrays.asList(
                 NotifyService.NOTIFY_HEADER_LAST_MODIFIED, String.valueOf(lastModified),
                 NotifyService.NOTIFY_HEADER_OP_HANDLE_IP, LOCAL_IP);
             String urlString = MessageFormat.format(URL_PATTERN, serverIp, RunningConfigUtils.getContextPath(), dataId,
                 group);
 
+            // 发起http请求并获取结果
             HttpResult result = NotifyService.invokeURL(urlString, headers, Constants.ENCODE);
+            // 代表本次成功处理
             if (result.code == HttpStatus.SC_OK) {
+                // 简单理解为格式化打印日志
                 ConfigTraceService.logNotifyEvent(dataId, group, tenant, null, lastModified, LOCAL_IP,
                     ConfigTraceService.NOTIFY_EVENT_OK, delayed, serverIp);
 

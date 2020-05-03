@@ -27,10 +27,14 @@ import static com.alibaba.nacos.core.utils.SystemUtils.STANDALONE_MODE;
  * datasource adapter
  *
  * @author Nacos
+ * 动态数据源
  */
 @Component
 public class DynamicDataSource implements ApplicationContextAware {
 
+    /**
+     * 类似一个配置对象  内部包含各种全局属性
+     */
     @Autowired
     private PropertyUtil propertyUtil;
 
@@ -45,6 +49,10 @@ public class DynamicDataSource implements ApplicationContextAware {
         return applicationContext;
     }
 
+    /**
+     * 通过该对象获取数据源服务
+     * @return
+     */
     public DataSourceService getDataSource() {
         DataSourceService dataSourceService = null;
 

@@ -29,6 +29,7 @@ import static com.alibaba.nacos.api.common.Constants.NUMBER_PATTERN;
  * Instance
  *
  * @author nkorange
+ * 服务实例信息
  */
 public class Instance {
 
@@ -64,6 +65,7 @@ public class Instance {
 
     /**
      * If instance is ephemeral
+     * 默认情况下 基于AP 实现分布式一致性   非瞬时代表基于CP
      *
      * @since 1.0.0
      */

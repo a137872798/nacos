@@ -22,16 +22,22 @@ import org.apache.commons.lang3.StringUtils;
  * 指数据发布事件。
  *
  * @author Nacos
+ * 代表某个配置的数据发生了变化
  */
 public class ConfigDataChangeEvent implements Event {
 
     final public boolean isBeta;
-    final public String dataId;
-    final public String group;
-    final public String tenant;
-    final public String tag;
-    final public long lastModifiedTs;
+    final public String dataId;  // 该数据对应的id
+    final public String group;   // 该数据所在组
+    final public String tenant;  // 租户信息
+    final public String tag;     // 标签信息
+    final public long lastModifiedTs;   // 上次修改时间
 
+    /**
+     * @param dataId
+     * @param group
+     * @param gmtModified
+     */
     public ConfigDataChangeEvent(String dataId, String group, long gmtModified) {
         this(false, dataId, group, gmtModified);
     }

@@ -29,6 +29,7 @@ import java.util.concurrent.TimeUnit;
  * Limiter
  *
  * @author Nacos
+ * 限流器
  */
 public class Limiter {
 
@@ -36,17 +37,20 @@ public class Limiter {
 
     private static final int CAPACITY_SIZE = 1000;
     private static final int LIMIT_TIME = 1000;
+    // 每个RateLimiter 会在1分钟后过期  每个 url 对应唯一一个限流
     private static Cache<String, RateLimiter> cache = CacheBuilder.newBuilder()
         .initialCapacity(CAPACITY_SIZE).expireAfterAccess(1, TimeUnit.MINUTES)
         .build();
 
     /**
      * qps 5
+     * 每秒处理5个请求
      */
     private static double limit = 5;
 
     static {
         try {
+            // 每秒允许发起几次请求
             String limitTimeStr = System
                 .getProperty("limitTime", String.valueOf(limit));
             limit = Double.parseDouble(limitTimeStr);
@@ -56,12 +60,18 @@ public class Limiter {
         }
     }
 
+    /**
+     * 以url作为限流标识 避免某个接口被刷
+     * @param accessKeyID
+     * @return
+     */
     public static boolean isLimit(String accessKeyID) {
         RateLimiter rateLimiter = null;
         try {
             rateLimiter = cache.get(accessKeyID, new Callable<RateLimiter>() {
                 @Override
                 public RateLimiter call() throws Exception {
+                    // 使用 qps来创建限流对象
                     return RateLimiter.create(limit);
                 }
             });

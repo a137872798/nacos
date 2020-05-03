@@ -41,6 +41,7 @@ import static com.alibaba.nacos.core.utils.SystemUtils.LOCAL_IP;
  * Merge task processor
  *
  * @author Nacos
+ * 该对象处理 MergeDataTask
  */
 public class MergeTaskProcessor implements TaskProcessor {
     final int PAGE_SIZE = 10000;
@@ -60,9 +61,12 @@ public class MergeTaskProcessor implements TaskProcessor {
         final String clientIp = mergeTask.getClientIp();
         try {
             List<ConfigInfoAggr> datumList = new ArrayList<ConfigInfoAggr>();
+            // 查询相关配置总数
             int rowCount = persistService.aggrConfigInfoCount(dataId, group, tenant);
+            // 计算页数
             int pageCount = (int)Math.ceil(rowCount * 1.0 / PAGE_SIZE);
             for (int pageNo = 1; pageNo <= pageCount; pageNo++) {
+                // 按页读取可聚合数据
                 Page<ConfigInfoAggr> page = persistService.findConfigInfoAggrByPage(dataId, group, tenant, pageNo,
                     PAGE_SIZE);
                 if (page != null) {
@@ -76,6 +80,7 @@ public class MergeTaskProcessor implements TaskProcessor {
             if (datumList.size() > 0) {
                 ConfigInfo cf = merge(dataId, group, tenant, datumList);
 
+                // 插入聚合后的记录
                 persistService.insertOrUpdate(null, null, cf, time, null);
 
                 log.info("[merge-ok] {}, {}, size={}, length={}, md5={}, content={}", dataId, group, datumList.size(),
@@ -84,7 +89,7 @@ public class MergeTaskProcessor implements TaskProcessor {
                 ConfigTraceService.logPersistenceEvent(dataId, group, tenant, null, time.getTime(), LOCAL_IP,
                     ConfigTraceService.PERSISTENCE_EVENT_MERGE, cf.getContent());
             }
-            // 删除
+            // 代表没有找到对应的待聚合数据 进行删除
             else {
                 if (StringUtils.isBlank(tag)) {
                     persistService.removeConfigInfo(dataId, group, tenant, clientIp, null);
@@ -102,6 +107,7 @@ public class MergeTaskProcessor implements TaskProcessor {
             EventDispatcher.fireEvent(new ConfigDataChangeEvent(false, dataId, group, tenant, tag, time.getTime()));
 
         } catch (Exception e) {
+            // 当处理器执行失败时 交给一个后台线程处理
             mergeService.addMergeTask(dataId, group, tenant, mergeTask.getClientIp());
             log.info("[merge-error] " + dataId + ", " + group + ", " + e.toString(), e);
         }
@@ -109,9 +115,18 @@ public class MergeTaskProcessor implements TaskProcessor {
         return true;
     }
 
+    /**
+     * 聚合列表中的配置
+     * @param dataId
+     * @param group
+     * @param tenant
+     * @param datumList
+     * @return
+     */
     public static ConfigInfo merge(String dataId, String group, String tenant, List<ConfigInfoAggr> datumList) {
         StringBuilder sb = new StringBuilder();
         String appName = null;
+        // 实际上只是把content 拼接起来
         for (ConfigInfoAggr aggrInfo : datumList) {
             if (aggrInfo.getAppName() != null) {
                 appName = aggrInfo.getAppName();

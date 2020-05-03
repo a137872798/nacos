@@ -21,6 +21,7 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * @author nkorange
+ * 过滤器配置对象
  */
 @Configuration
 public class NamingConfig {
@@ -36,6 +37,10 @@ public class NamingConfig {
         return registration;
     }
 
+    /**
+     * 应该是限流用的吧
+     * @return
+     */
     @Bean
     public FilterRegistrationBean trafficReviseFilterRegistration() {
         FilterRegistrationBean<TrafficReviseFilter> registration = new FilterRegistrationBean<>();

@@ -25,11 +25,13 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * Event dispatcher
  *
  * @author Nacos
+ * 事件分发器对象
  */
 public class EventDispatcher {
 
     /**
      * add event listener
+     * 会为每种类型的 event 维护一个listener列表
      */
     static public void addEventListener(AbstractEventListener listener) {
         for (Class<? extends Event> type : listener.interest()) {
@@ -39,6 +41,7 @@ public class EventDispatcher {
 
     /**
      * fire event, notify listeners.
+     * 找到event匹配的所有listener 并触发
      */
     static public void fireEvent(Event event) {
         if (null == event) {
@@ -82,6 +85,9 @@ public class EventDispatcher {
         }
     }
 
+    /**
+     * 对应某种事件类型 以及相关的所有监听器
+     */
     static private class Entry {
         final Class<? extends Event> eventType;
         final CopyOnWriteArrayList<AbstractEventListener> listeners;
@@ -111,6 +117,9 @@ public class EventDispatcher {
 
     static private final Logger log = LoggerFactory.getLogger(EventDispatcher.class);
 
+    /**
+     * 用于存放所有监听器
+     */
     static final CopyOnWriteArrayList<Entry> LISTENER_HUB = new CopyOnWriteArrayList<Entry>();
 
     public interface Event {

@@ -21,6 +21,7 @@ import java.util.List;
 /**
  * @author caogu.wyp
  * @version $Id: ClusterInfo.java, v 0.1 2018-09-17 上午11:36 caogu.wyp Exp $$
+ * 集群下 包含了所有节点信息
  */
 public class ClusterInfo implements Serializable {
 

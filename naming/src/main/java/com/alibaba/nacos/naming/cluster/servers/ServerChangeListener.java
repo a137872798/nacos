@@ -22,6 +22,7 @@ import java.util.List;
  *
  * @author nkorange
  * @since 1.0.0
+ * 监听某集群服务列表的变化  以及收到的心跳变化
  */
 public interface ServerChangeListener {
 

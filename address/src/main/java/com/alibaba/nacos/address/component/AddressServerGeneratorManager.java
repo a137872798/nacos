@@ -35,6 +35,11 @@ import java.util.List;
 @Component
 public class AddressServerGeneratorManager {
 
+    /**
+     * 这里返回一个特殊的名称
+     * @param name
+     * @return
+     */
     public String generateProductName(String name) {
 
         if (StringUtils.isBlank(name) || AddressServerConstants.DEFAULT_PRODUCT.equals(name)) {
@@ -54,12 +59,14 @@ public class AddressServerGeneratorManager {
      * @return
      */
     public List<Instance> generateInstancesByIps(String serviceName, String rawProductName, String clusterName, String[] ipArray) {
+        // 没有指定服务名和集群名时  返回空列表
         if (StringUtils.isEmpty(serviceName)
             || StringUtils.isEmpty(clusterName)
             || ipArray == null || ipArray.length == 0) {
             return Collections.emptyList();
         }
 
+        // 使用instance 包装ip信息
         List<Instance> instanceList = new ArrayList<>(ipArray.length);
         for (String ip : ipArray) {
             String[] ipAndPort = generateIpAndPort(ip);
@@ -77,6 +84,11 @@ public class AddressServerGeneratorManager {
         return instanceList;
     }
 
+    /**
+     * ip信息携带了端口的话 返回 ip + port 否则返回默认端口
+     * @param ip
+     * @return
+     */
     public String[] generateIpAndPort(String ip) {
 
         int index = ip.indexOf(AddressServerConstants.IP_PORT_SEPARATOR);

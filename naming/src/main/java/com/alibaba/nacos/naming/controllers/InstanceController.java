@@ -62,12 +62,18 @@ public class InstanceController {
     @Autowired
     private SwitchDomain switchDomain;
 
+    /**
+     * 该对象负责为每个订阅者维护连接 并通过dataSource 拉取数据 并发送给订阅者
+     */
     @Autowired
     private PushService pushService;
 
     @Autowired
     private ServiceManager serviceManager;
 
+    /**
+     * 获取要发送到nacos-naming client 的数据
+     */
     private DataSource pushDataSource = new DataSource() {
 
         @Override
@@ -75,6 +81,7 @@ public class InstanceController {
 
             JSONObject result = new JSONObject();
             try {
+                // 传入对端信息 并返回对应的配置数据
                 result = doSrvIPXT(client.getNamespaceId(), client.getServiceName(), client.getAgent(),
                     client.getClusters(), client.getSocketAddr().getAddress().getHostAddress(), 0, StringUtils.EMPTY,
                     false, StringUtils.EMPTY, StringUtils.EMPTY, false);
@@ -90,6 +97,12 @@ public class InstanceController {
     };
 
 
+    /**
+     * 将某个服务实例 注册到 nacos-naming server 上
+     * @param request
+     * @return
+     * @throws Exception
+     */
     @CanDistro
     @PostMapping
     @Secured(parser = NamingResourceParser.class, action = ActionTypes.WRITE)
@@ -102,6 +115,12 @@ public class InstanceController {
         return "ok";
     }
 
+    /**
+     * 注销某个实例
+     * @param request
+     * @return
+     * @throws Exception
+     */
     @CanDistro
     @DeleteMapping
     @Secured(parser = NamingResourceParser.class, action = ActionTypes.WRITE)
@@ -187,6 +206,12 @@ public class InstanceController {
         return "ok";
     }
 
+    /**
+     * 拉取某服务下所有实例信息  根据是否订阅标识 注册一个PushClient 用于通知client 实例的变化信息
+     * @param request
+     * @return
+     * @throws Exception
+     */
     @GetMapping("/list")
     @Secured(parser = NamingResourceParser.class, action = ActionTypes.READ)
     public JSONObject list(HttpServletRequest request) throws Exception {
@@ -255,6 +280,12 @@ public class InstanceController {
         throw new NacosException(NacosException.NOT_FOUND, "no matched ip found!");
     }
 
+    /**
+     * 接收某实例的续约请求   基于瞬时注册的实现 服务提供者本身不进行持久化 而是采用续约的机制 使得能够留存在注册中心
+     * @param request
+     * @return
+     * @throws Exception
+     */
     @CanDistro
     @PutMapping("/beat")
     @Secured(parser = NamingResourceParser.class, action = ActionTypes.WRITE)
@@ -262,7 +293,9 @@ public class InstanceController {
 
         JSONObject result = new JSONObject();
 
+        // 返回一个 续约间隔  代表在目标时间前 再次发送续约请求即可  避免网络IO的浪费
         result.put("clientBeatInterval", switchDomain.getClientBeatInterval());
+        // 找到该服务对应的 namespace  cluster 等信息
         String serviceName = WebUtils.required(request, CommonParams.SERVICE_NAME);
         String namespaceId = WebUtils.optional(request, CommonParams.NAMESPACE_ID,
             Constants.DEFAULT_NAMESPACE_ID);
@@ -270,6 +303,7 @@ public class InstanceController {
             UtilsAndCommons.DEFAULT_CLUSTER_NAME);
         String ip = WebUtils.optional(request, "ip", StringUtils.EMPTY);
         int port = Integer.parseInt(WebUtils.optional(request, "port", "0"));
+        // 非轻量级发送时 会携带整个节点信息   默认情况下就是这种 避免某个注册中心server 重启时没有该实例的详细信息
         String beat = WebUtils.optional(request, "beat", StringUtils.EMPTY);
 
         RsInfo clientBeat = null;
@@ -292,13 +326,17 @@ public class InstanceController {
             Loggers.SRV_LOG.debug("[CLIENT-BEAT] full arguments: beat: {}, serviceName: {}", clientBeat, serviceName);
         }
 
+        // 从服务提供者管理器中查找是否存在该实例
         Instance instance = serviceManager.getInstance(namespaceId, serviceName, clusterName, ip, port);
 
+        // 代表该服务还未注册到 注册中心上
         if (instance == null) {
+            // 如果是轻量级检测 返回未找到服务
             if (clientBeat == null) {
                 result.put(CommonParams.CODE, NamingResponseCode.RESOURCE_NOT_FOUND);
                 return result;
             }
+            // 否则将实例注册到 本节点
             instance = new Instance();
             instance.setPort(clientBeat.getPort());
             instance.setIp(clientBeat.getIp());
@@ -312,6 +350,9 @@ public class InstanceController {
             serviceManager.registerInstance(namespaceId, serviceName, instance);
         }
 
+        // 以上完成了 新实例的心跳检测任务  添加实例请求同步  通知订阅者（nacos-naming client）
+
+        // 获取实例信息 并生成心跳包
         Service service = serviceManager.getService(namespaceId, serviceName);
 
         if (service == null) {
@@ -332,6 +373,12 @@ public class InstanceController {
         return result;
     }
 
+    /**
+     * 获取某服务下所有提供者
+     * @param key
+     * @return
+     * @throws NacosException
+     */
     @RequestMapping("/statuses")
     public JSONObject listWithHealthStatus(@RequestParam String key) throws NacosException {
 
@@ -428,11 +475,28 @@ public class InstanceController {
     }
 
 
+    /**
+     * 返回符合要求的所有实例信息
+     * @param namespaceId
+     * @param serviceName
+     * @param agent
+     * @param clusters
+     * @param clientIP
+     * @param udpPort
+     * @param env
+     * @param isCheck
+     * @param app
+     * @param tid
+     * @param healthyOnly
+     * @return
+     * @throws Exception
+     */
     public JSONObject doSrvIPXT(String namespaceId, String serviceName, String agent, String clusters, String clientIP,
                                 int udpPort,
                                 String env, boolean isCheck, String app, String tid, boolean healthyOnly)
         throws Exception {
 
+        // 返回对端的语言信息 (比如什么版本 同时可以确定能否兼容)
         ClientInfo clientInfo = new ClientInfo(agent);
         JSONObject result = new JSONObject();
         Service service = serviceManager.getService(namespaceId, serviceName);
@@ -452,6 +516,7 @@ public class InstanceController {
         long cacheMillis = switchDomain.getDefaultCacheMillis();
 
         // now try to enable the push
+        // 如果设置了有效的 udp端口 代表client  尝试作为订阅者监听服务实例的变化
         try {
             if (udpPort > 0 && pushService.canEnablePush(agent)) {
 

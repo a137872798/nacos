@@ -201,6 +201,11 @@ public class OperatorController {
         return result;
     }
 
+    /**
+     * 接收到其他节点发来的心跳
+     * @param serverStatus
+     * @return
+     */
     @RequestMapping("/server/status")
     public String serverStatus(@RequestParam String serverStatus) {
         serverListManager.onReceiveServerStatus(serverStatus);

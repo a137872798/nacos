@@ -21,6 +21,7 @@ package com.alibaba.nacos.core.auth;
  *
  * @author nkorange
  * @since 1.2.0
+ * 资源解析请 从req中解析代表资源的 唯一名称
  */
 public interface ResourceParser {
 

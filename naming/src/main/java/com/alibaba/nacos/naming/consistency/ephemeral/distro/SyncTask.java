@@ -20,15 +20,25 @@ import java.util.List;
 /**
  * @author nkorange
  * @since 1.0.0
+ * 当某个节点注册了新实例时  信息需要同步到其他服务器
  */
 public class SyncTask {
 
+    /**
+     * 变动的 service  之所以是一个list 是因为采用批处理的方式
+     */
     private List<String> keys;
 
     private int retryCount;
 
+    /**
+     * 上次同步的时间
+     */
     private long lastExecuteTime;
 
+    /**
+     * 本次同步的目标服务器
+     */
     private String targetServer;
 
     public List<String> getKeys() {

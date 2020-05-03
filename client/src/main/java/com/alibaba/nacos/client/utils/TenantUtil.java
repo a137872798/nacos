@@ -24,6 +24,9 @@ public class TenantUtil {
 
     private static String userTenant;
 
+    /**
+     * 惰性加载 当类加载器触发加载该类时 从系统变量种尝试获取租户id 默认为""
+     */
     static {
         userTenant = System.getProperty("tenant.id", "");
     }
@@ -36,6 +39,7 @@ public class TenantUtil {
      * </p>
      *
      * @return
+     * 获取用户租户信息
      */
     public static String getUserTenantForAcm() {
         String tmp = userTenant;

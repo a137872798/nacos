@@ -40,9 +40,15 @@ public class HealthCheckExtendProvider implements BeanFactoryAware {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(HealthCheckExtendProvider.class);
 
+    /**
+     * 通过spi 机制加载所有的 心跳处理器
+     */
     private ServiceLoader<HealthCheckProcessor> processorLoader
         = ServiceLoader.load(HealthCheckProcessor.class);
 
+    /**
+     * 找到所有心跳检查器
+     */
     private ServiceLoader<AbstractHealthChecker> checkerLoader
         = ServiceLoader.load(AbstractHealthChecker.class);
 
@@ -71,10 +77,13 @@ public class HealthCheckExtendProvider implements BeanFactoryAware {
             if(processorType.contains(type)){
                 throw new RuntimeException("More than one processor of the same type was found : [type=\"" + type + "\"]");
             }
+            // 某些处理器 可能自己携带了 心跳检测的方式
             processorType.add(type);
+            // 将该对象注册到 bean 工厂
             registry.registerSingleton(lowerFirstChar(processor.getClass().getSimpleName()), processor);
         }
 
+        // 同上
         while(healthCheckerIt.hasNext()){
             AbstractHealthChecker checker = healthCheckerIt.next();
             String type = checker.getType();
@@ -84,6 +93,7 @@ public class HealthCheckExtendProvider implements BeanFactoryAware {
             healthCheckerType.add(type);
             HealthCheckType.registerHealthChecker(checker.getType(), checker.getClass());
         }
+        // 代表某些 HealthChecker 没有找到匹配的 processor 抛出异常
         if(!processorType.equals(healthCheckerType)){
             throw new RuntimeException("An unmatched processor and healthChecker are detected in the extension package.");
         }

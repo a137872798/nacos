@@ -19,6 +19,7 @@ package com.alibaba.nacos.api.config.filter;
  * Config Request Interface
  *
  * @author Nacos
+ * 代表获取配置的请求体
  */
 public interface IConfigRequest {
     /**

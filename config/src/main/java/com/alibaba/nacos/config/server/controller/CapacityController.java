@@ -31,6 +31,7 @@ import javax.servlet.http.HttpServletResponse;
  * Capacity Management
  *
  * @author hexu.hxy
+ * 容量控制器
  */
 @RestController
 @RequestMapping(Constants.CAPACITY_CONTROLLER_PATH)

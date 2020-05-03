@@ -29,6 +29,7 @@ import static com.alibaba.nacos.client.utils.LogUtils.NAMING_LOGGER;
 
 /**
  * @author xuanyin
+ * 均衡负载对象
  */
 public class Balancer {
 
@@ -49,6 +50,7 @@ public class Balancer {
             return hosts;
         }
 
+        // 从中随机选择一个服务实例
         public static Instance selectHost(ServiceInfo dom) {
 
             List<Instance> hosts = selectAll(dom);
@@ -66,6 +68,7 @@ public class Balancer {
      *
      * @param hosts The list of the host.
      * @return The random-weight result of the host
+     * 从一组服务实例中选择一个
      */
     protected static Instance getHostByRandomWeight(List<Instance> hosts) {
         NAMING_LOGGER.debug("entry randomWithWeight");
@@ -80,13 +83,16 @@ public class Balancer {
 
         List<Pair<Instance>> hostsWithWeight = new ArrayList<Pair<Instance>>();
         for (Instance host : hosts) {
+            // 首先确保实例是健康的
             if (host.isHealthy()) {
                 hostsWithWeight.add(new Pair<Instance>(host, host.getWeight()));
             }
         }
         NAMING_LOGGER.debug("for (Host host : hosts)");
+        // 洗牌
         vipChooser.refresh(hostsWithWeight);
         NAMING_LOGGER.debug("vipChooser.refresh");
+        // 随机选一个 (跟权重挂钩)
         return vipChooser.randomWithWeight();
     }
 }

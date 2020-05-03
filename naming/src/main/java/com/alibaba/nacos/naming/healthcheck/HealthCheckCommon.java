@@ -40,6 +40,7 @@ import java.util.concurrent.*;
  *
  * @author nkorange
  * @since 1.0.0
+ * 该对象包含了心跳检测需要的公共方法
  */
 @Component
 public class HealthCheckCommon {
@@ -53,9 +54,15 @@ public class HealthCheckCommon {
     @Autowired
     private ServerListManager serverListManager;
 
+    /**
+     * 该对象负责推送心跳包 到其他集群下的client
+     */
     @Autowired
     private PushService pushService;
 
+    /**
+     * 存放心跳检测结果
+     */
     private static LinkedBlockingDeque<HealthCheckResult> healthCheckResults = new LinkedBlockingDeque<>(1024 * 128);
 
     private static ScheduledExecutorService executorService = Executors.newSingleThreadScheduledExecutor(new ThreadFactory() {
@@ -73,9 +80,11 @@ public class HealthCheckCommon {
         executorService.schedule(new Runnable() {
             @Override
             public void run() {
+                // 获取之前心跳检测认为健康的实例
                 List list = Arrays.asList(healthCheckResults.toArray());
                 healthCheckResults.clear();
 
+                // 通过 定期读取集群配置文件 获取当前所有服务实例
                 List<Server> sameSiteServers = serverListManager.getServers();
 
                 if (sameSiteServers == null || sameSiteServers.size() <= 0) {
@@ -93,6 +102,7 @@ public class HealthCheckCommon {
                             server, JSON.toJSONString(list));
                     }
 
+                    // 定期将该节点下服务实例健康信息同步到其他节点
                     HttpClient.HttpResult httpResult = HttpClient.httpPost("http://" + server.getKey()
                         + RunningConfig.getContextPath() + UtilsAndCommons.NACOS_NAMING_CONTEXT
                         + "/api/healthCheckResult", null, params);
@@ -132,24 +142,36 @@ public class HealthCheckCommon {
         task.setCheckRTNormalized(checkRT);
     }
 
+    /**
+     * 心跳检测成功时 才调用该方法
+     * @param ip
+     * @param task
+     * @param msg
+     */
     public void checkOK(Instance ip, HealthCheckTask task, String msg) {
         Cluster cluster = task.getCluster();
 
         try {
             if (!ip.isHealthy() || !ip.isMockValid()) {
+                // 增加当前实例的检测次数
                 if (ip.getOKCount().incrementAndGet() >= switchDomain.getCheckTimes()) {
+                    // 代表该节点是 可响应的
                     if (distroMapper.responsible(cluster, ip)) {
+                        // 设置在线标识
                         ip.setHealthy(true);
                         ip.setMockValid(true);
 
                         Service service = cluster.getService();
                         service.setLastModifiedMillis(System.currentTimeMillis());
+                        // 将某个服务实例上线的信息通知到所有订阅者client
                         pushService.serviceChanged(service);
+                        // 存入一个结果对象
                         addResult(new HealthCheckResult(service.getName(), ip));
 
                         Loggers.EVT_LOG.info("serviceName: {} {POS} {IP-ENABLED} valid: {}:{}@{}, region: {}, msg: {}",
                             cluster.getService().getName(), ip.getIp(), ip.getPort(), cluster.getName(), UtilsAndCommons.LOCALHOST_SITE, msg);
                     } else {
+                        // 假装有效
                         if (!ip.isMockValid()) {
                             ip.setMockValid(true);
                             Loggers.EVT_LOG.info("serviceName: {} {PROBE} {IP-ENABLED} valid: {}:{}@{}, region: {}, msg: {}",
@@ -165,6 +187,7 @@ public class HealthCheckCommon {
             Loggers.SRV_LOG.error("[CHECK-OK] error when close check task.", t);
         }
 
+        // 设置相关标识
         ip.getFailCount().set(0);
         ip.setBeingChecked(false);
     }
@@ -172,6 +195,7 @@ public class HealthCheckCommon {
     public void checkFail(Instance ip, HealthCheckTask task, String msg) {
         Cluster cluster = task.getCluster();
 
+        // 将该ip 对应的节点设置成非健康
         try {
             if (ip.isHealthy() || ip.isMockValid()) {
                 if (ip.getFailCount().incrementAndGet() >= switchDomain.getCheckTimes()) {
@@ -206,17 +230,27 @@ public class HealthCheckCommon {
         ip.setBeingChecked(false);
     }
 
+    /**
+     * 代表心跳检测出现了异常  比如跟某节点建立连接却失败
+     * @param ip
+     * @param task
+     * @param msg
+     */
     public void checkFailNow(Instance ip, HealthCheckTask task, String msg) {
         Cluster cluster = task.getCluster();
         try {
+            // 此时该节点任务是可用的
             if (ip.isHealthy() || ip.isMockValid()) {
+                // 该节点还在 ServerListenerManager 的 health 列表中
                 if (distroMapper.responsible(cluster, ip)) {
+                    // 标记成不可用
                     ip.setHealthy(false);
                     ip.setMockValid(false);
 
                     Service service = cluster.getService();
                     service.setLastModifiedMillis(System.currentTimeMillis());
 
+                    // 发出事件
                     pushService.serviceChanged(service);
                     addResult(new HealthCheckResult(service.getName(), ip));
 
@@ -250,7 +284,11 @@ public class HealthCheckCommon {
         }
     }
 
+    /**
+     * 心跳检测结果对象
+     */
     static class HealthCheckResult {
+        // 哪个服务下的哪个实例
         private String serviceName;
         private Instance instance;
 

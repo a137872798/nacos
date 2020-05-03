@@ -27,7 +27,7 @@ import static com.alibaba.nacos.core.utils.SystemUtils.LOCAL_IP;
 
 /**
  * Config trace
- *
+ * 追踪各种配置相关的行为 并打印日志
  * @author Nacos
  */
 @Service
@@ -66,6 +66,18 @@ public class ConfigTraceService {
             requestIpAppName, ts, handleIp, "persist", type, -1, md5);
     }
 
+    /**
+     * 通知事件结果
+     * @param dataId
+     * @param group
+     * @param tenant
+     * @param requestIpAppName
+     * @param ts
+     * @param handleIp   本次发起请求的服务器ip
+     * @param type
+     * @param delayed
+     * @param targetIp    目标服务器ip
+     */
     public static void logNotifyEvent(String dataId, String group, String tenant, String requestIpAppName, long ts,
                                       String handleIp, String type, long delayed, String targetIp) {
         if (!LogUtil.traceLog.isInfoEnabled()) {

@@ -49,6 +49,8 @@ public class AddressServerClusterController {
     @Autowired
     private ServiceManager serviceManager;
 
+    // 下面2个 manager 用于提供地址服务
+
     @Autowired
     private AddressServerManager addressServerManager;
 
@@ -60,27 +62,32 @@ public class AddressServerClusterController {
      * @param cluster Ip list of product cluster to be associated
      * @param ips     will post ip list.
      * @return
+     * 为某个服务下 某个 集群设置一组ip
      */
     @RequestMapping(value = "", method = RequestMethod.POST)
     public ResponseEntity postCluster(@RequestParam(required = false) String product,
                                       @RequestParam(required = false) String cluster,
                                       @RequestParam(name = "ips") String ips) {
 
-        //1. prepare the storage name for product and cluster
+        //1. prepare the storage name for product and cluster   加工product名 和集群名
         String productName = addressServerGeneratorManager.generateProductName(product);
         String clusterName = addressServerManager.getDefaultClusterNameIfEmpty(cluster);
 
-        //2. prepare the response name for product and cluster to client
+        //2. prepare the response name for product and cluster to client   获取2个默认值
         String rawProductName = addressServerManager.getRawProductName(product);
         String rawClusterName = addressServerManager.getRawClusterName(cluster);
         Loggers.addressLogger.info("put cluster node,the cluster name is " + cluster + "; the product name=" + product + "; the ip list=" + ips);
         ResponseEntity responseEntity;
         try {
+            // 生成服务名
             String serviceName = addressServerGeneratorManager.generateNacosServiceName(productName);
 
+            // 创建集群对象
             Cluster clusterObj = new Cluster();
             clusterObj.setName(clusterName);
+            // 默认情况下设置一个空的
             clusterObj.setHealthChecker(new AbstractHealthChecker.None());
+            // 设置映射关系
             serviceManager.createServiceIfAbsent(Constants.DEFAULT_NAMESPACE_ID, serviceName, false, clusterObj);
             String[] ipArray = addressServerManager.splitIps(ips);
             String checkResult = AddressServerParamCheckUtil.checkIps(ipArray);

@@ -23,6 +23,7 @@ package com.alibaba.nacos.api;
  *
  * @author pbting
  * @date 2019-02-22 3:38 PM
+ * 存放一些系统常量
  */
 public interface SystemPropertyKeyConst {
 

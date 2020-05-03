@@ -295,6 +295,7 @@ public class ServiceController {
         }
 
         try {
+            // 解析其他节点发来的某服务的校验和信息
             ServiceManager.ServiceChecksum checksums = JSON.parseObject(statuses, ServiceManager.ServiceChecksum.class);
             if (checksums == null) {
                 Loggers.SRV_LOG.warn("[DOMAIN-STATUS] receive malformed data: null");
@@ -315,6 +316,7 @@ public class ServiceController {
 
                 service.recalculateChecksum();
 
+                // 发现本节点与其他节点的校验和不一致 加入到一个待更新列表
                 if (!checksum.equals(service.getChecksum())) {
                     if (Loggers.SRV_LOG.isDebugEnabled()) {
                         Loggers.SRV_LOG.debug("checksum of {} is not consistent, remote: {}, checksum: {}, local: {}",

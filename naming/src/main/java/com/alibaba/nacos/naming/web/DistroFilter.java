@@ -44,6 +44,7 @@ import java.util.List;
 
 /**
  * @author nacos
+ * nacos-naming server 的controller 上很多api 都携带了 CanDistro注解 这里会识别注解并作特定处理
  */
 public class DistroFilter implements Filter {
 
@@ -61,6 +62,14 @@ public class DistroFilter implements Filter {
 
     }
 
+    /**
+     * 对请求进行拦截
+     * @param servletRequest
+     * @param servletResponse
+     * @param filterChain
+     * @throws IOException
+     * @throws ServletException
+     */
     @Override
     public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
         HttpServletRequest req = (HttpServletRequest) servletRequest;
@@ -68,6 +77,7 @@ public class DistroFilter implements Filter {
 
         String urlString = req.getRequestURI();
 
+        // 将查询参数拼接到请求路径上
         if (StringUtils.isNotBlank(req.getQueryString())) {
             urlString += "?" + req.getQueryString();
         }
@@ -76,19 +86,23 @@ public class DistroFilter implements Filter {
             String path = new URI(req.getRequestURI()).getPath();
             String serviceName = req.getParameter(CommonParams.SERVICE_NAME);
             // For client under 0.8.0:
+            // 如果没有设置 serviceName 那么获取 dom属性作为服务名  兼容旧功能
             if (StringUtils.isBlank(serviceName)) {
                 serviceName = req.getParameter("dom");
             }
 
+            // 去除空格
             if (StringUtils.isNotBlank(serviceName)) {
                 serviceName = serviceName.trim();
             }
+            // 根据请求路径找到匹配的 method
             Method method = controllerMethodsCache.getMethod(req.getMethod(), path);
 
             if (method == null) {
                 throw new NoSuchMethodException(req.getMethod() + " " + path);
             }
 
+            // 找到组信息
             String groupName = req.getParameter(CommonParams.GROUP_NAME);
             if (StringUtils.isBlank(groupName)) {
                 groupName = Constants.DEFAULT_GROUP;
@@ -96,15 +110,20 @@ public class DistroFilter implements Filter {
 
             // use groupName@@serviceName as new service name:
             String groupedServiceName = serviceName;
+            // 拼接生成 groupName@@serviceName
             if (StringUtils.isNotBlank(serviceName) && !serviceName.contains(Constants.SERVICE_INFO_SPLITER)) {
                 groupedServiceName = groupName + Constants.SERVICE_INFO_SPLITER + serviceName;
             }
 
             // proxy request to other server if necessary:
+            // 使用该注解修饰的方法代表本次请求会重定向到其他地方
+            // 后半段代表本机无法正常运行 需要去其他节点拉取数据
             if (method.isAnnotationPresent(CanDistro.class) && !distroMapper.responsible(groupedServiceName)) {
 
                 String userAgent = req.getHeader(HttpHeaderConsts.USER_AGENT_HEADER);
 
+                // 如果 user-Agent 是 nacos - Server   代表本次请求是由其他nacos服务器发过来的
+                // 无法进行二次转发
                 if (StringUtils.isNotBlank(userAgent) && userAgent.contains(UtilsAndCommons.NACOS_SERVER_HEADER)) {
                     // This request is sent from peer server, should not be redirected again:
                     Loggers.SRV_LOG.error("receive invalid redirect request from peer {}", req.getRemoteAddr());
@@ -114,6 +133,7 @@ public class DistroFilter implements Filter {
                 }
 
                 List<String> headerList = new ArrayList<>(16);
+                // 获取本次请求携带的所有请求头信息
                 Enumeration<String> headers = req.getHeaderNames();
                 while (headers.hasMoreElements()) {
                     String headerName = headers.nextElement();
@@ -121,14 +141,17 @@ public class DistroFilter implements Filter {
                     headerList.add(req.getHeader(headerName));
                 }
 
+                // 获取请求体  针对POST 请求
                 String body = IoUtils.toString(req.getInputStream(), Charsets.UTF_8.name());
 
+                // 选择将本次请求转发到其他节点
                 HttpClient.HttpResult result =
                     HttpClient.request("http://" + distroMapper.mapSrv(groupedServiceName) + urlString, headerList,
                         StringUtils.isBlank(req.getQueryString()) ? HttpClient.translateParameterMap(req.getParameterMap()) : new HashMap<>(2)
                         , body, PROXY_CONNECT_TIMEOUT, PROXY_READ_TIMEOUT, Charsets.UTF_8.name(), req.getMethod());
 
                 try {
+                    // 设置字符集 并将结果写入到 outputStream中
                     resp.setCharacterEncoding("UTF-8");
                     resp.getWriter().write(result.content);
                     resp.setStatus(result.code);
@@ -138,8 +161,12 @@ public class DistroFilter implements Filter {
                 return;
             }
 
+
+            // 包装该对象
             OverrideParameterRequestWrapper requestWrapper = OverrideParameterRequestWrapper.buildRequest(req);
+            // 填充其他参数
             requestWrapper.addParameter(CommonParams.SERVICE_NAME, groupedServiceName);
+            // 将请求往下传播
             filterChain.doFilter(requestWrapper, resp);
         } catch (AccessControlException e) {
             resp.sendError(HttpServletResponse.SC_FORBIDDEN, "access denied: " + ExceptionUtil.getAllExceptionMsg(e));

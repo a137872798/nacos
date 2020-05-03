@@ -26,10 +26,16 @@ import java.util.Map;
 
 /**
  * Report local server status to other server
- *
+ * 服务器之间的状态同步器
  * @author nacos
  */
 public class ServerStatusSynchronizer implements Synchronizer {
+
+    /**
+     * 将自身状态发送到其他服务器     实际上是一个心跳检测  集群中每个对象会向其他节点发送请求 确保让对方知道自己存活
+     * @param serverIP target server address
+     * @param msg      message to send
+     */
     @Override
     public void send(final String serverIP, Message msg) {
         if (StringUtils.isEmpty(serverIP)) {
@@ -38,6 +44,7 @@ public class ServerStatusSynchronizer implements Synchronizer {
 
         final Map<String, String> params = new HashMap<String, String>(2);
 
+        // 这里传输的参数就是 服务器状态
         params.put("serverStatus", msg.getData());
 
         String url = "http://" + serverIP + ":" + RunningConfig.getServerPort()
@@ -49,6 +56,7 @@ public class ServerStatusSynchronizer implements Synchronizer {
         }
 
         try {
+            // 基于http协议发送
             HttpClient.asyncHttpGet(url, null, params, new AsyncCompletionHandler() {
                 @Override
                 public Integer onCompleted(Response response) throws Exception {

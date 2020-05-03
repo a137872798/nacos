@@ -63,6 +63,16 @@ public class HttpClient {
         return request(url, headers, paramValues, StringUtils.EMPTY, encoding, HttpMethod.GET);
     }
 
+    /**
+     * 基于 原生 Connection 发起连接
+     * @param url
+     * @param headers
+     * @param paramValues
+     * @param body
+     * @param encoding
+     * @param method
+     * @return
+     */
     public static HttpResult request(String url, List<String> headers, Map<String, String> paramValues, String body, String encoding, String method) {
         HttpURLConnection conn = null;
         try {
@@ -83,6 +93,7 @@ public class HttpClient {
                 conn.getOutputStream().flush();
                 conn.getOutputStream().close();
             }
+            // 阻塞直到对端返回结果
             conn.connect();
             if (NAMING_LOGGER.isDebugEnabled()) {
                 NAMING_LOGGER.debug("Request from server: " + url);

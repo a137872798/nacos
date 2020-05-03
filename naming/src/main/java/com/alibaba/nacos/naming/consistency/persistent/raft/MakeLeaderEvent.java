@@ -18,6 +18,7 @@ package com.alibaba.nacos.naming.consistency.persistent.raft;
 /**
  * @author pbting
  * @date 2019-07-01 8:45 PM
+ * 代表发起了一个尝试成为leader的事件
  */
 public class MakeLeaderEvent extends BaseRaftEvent {
 

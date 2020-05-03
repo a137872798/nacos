@@ -40,6 +40,7 @@ import java.util.concurrent.locks.ReentrantLock;
  *
  * @author nkorange
  * @since 1.0.0
+ * 开关管理器
  */
 @Component
 public class SwitchManager implements RecordListener<SwitchDomain> {
@@ -56,6 +57,7 @@ public class SwitchManager implements RecordListener<SwitchDomain> {
     public void init() {
 
         try {
+            // 将本对象作为监听器注册到 一致性服务上
             consistencyService.listen(UtilsAndCommons.getSwitchDomainKey(), this);
         } catch (NacosException e) {
             Loggers.SRV_LOG.error("listen switch service failed.", e);

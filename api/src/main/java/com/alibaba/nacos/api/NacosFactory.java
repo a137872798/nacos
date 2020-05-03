@@ -29,8 +29,11 @@ import com.alibaba.nacos.api.naming.NamingService;
  * Nacos Factory
  *
  * @author Nacos
+ * nacos 对外暴露的api  通过该对象可以创建一个配置中心和 一个 注册中心
  */
 public class NacosFactory {
+
+    // ConfigService 应该只是一个 入口 内部封装了 与 nacos服务器 通信的逻辑
 
     /**
      * Create config service
@@ -38,6 +41,7 @@ public class NacosFactory {
      * @param properties init param
      * @return config
      * @throws NacosException Exception
+     * 通过指定的prop初始化 配置中心
      */
     public static ConfigService createConfigService(Properties properties) throws NacosException {
         return ConfigFactory.createConfigService(properties);
@@ -49,6 +53,7 @@ public class NacosFactory {
      * @param serverAddr server list
      * @return config
      * @throws NacosException Exception
+     * 指定 配置中心的地址
      */
     public static ConfigService createConfigService(String serverAddr) throws NacosException {
         return ConfigFactory.createConfigService(serverAddr);
@@ -60,6 +65,7 @@ public class NacosFactory {
      * @param serverAddr server list
      * @return Naming
      * @throws NacosException Exception
+     * 注册中心
      */
     public static NamingService createNamingService(String serverAddr) throws NacosException {
         return NamingFactory.createNamingService(serverAddr);

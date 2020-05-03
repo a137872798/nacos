@@ -30,6 +30,7 @@ public interface ConfigChangeParser {
      * judge type
      * @param type
      * @return
+     * 是否是匹配的类型
      */
     boolean isResponsibleFor(String type);
 
@@ -40,6 +41,7 @@ public interface ConfigChangeParser {
      * @param type
      * @return
      * @throws IOException
+     * 进行解析 并生成结果
      */
     Map<String, ConfigChangeItem> doParse(String oldContent, String newContent, String type) throws IOException;
 }

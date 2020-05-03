@@ -29,6 +29,7 @@ import com.alibaba.nacos.naming.pojo.Record;
  *
  * @author nkorange
  * @since 1.0.0
+ * 一致性服务  (比如raft)
  */
 public interface ConsistencyService {
 
@@ -38,7 +39,7 @@ public interface ConsistencyService {
      * @param key   key of data, this key should be globally unique
      * @param value value of data
      * @throws NacosException
-     * @see
+     * 将一组键值对保存到 nacos   Record 代表数据体 本身可以获取校验和属性
      */
     void put(String key, Record value) throws NacosException;
 
@@ -56,6 +57,7 @@ public interface ConsistencyService {
      * @param key key of data
      * @return data related to the key
      * @throws NacosException
+     * 从集群中获取某个属性
      */
     Datum get(String key) throws NacosException;
 
@@ -65,6 +67,7 @@ public interface ConsistencyService {
      * @param key      key of data
      * @param listener callback of data change
      * @throws NacosException
+     * 为某个 key 设置一个监听器 用于监听值的变化
      */
     void listen(String key, RecordListener listener) throws NacosException;
 
@@ -74,6 +77,7 @@ public interface ConsistencyService {
      * @param key      key of data
      * @param listener callback of data change
      * @throws NacosException
+     * 注销监听
      */
     void unlisten(String key, RecordListener listener) throws NacosException;
 
@@ -81,6 +85,7 @@ public interface ConsistencyService {
      * Tell the status of this consistency service
      *
      * @return true if available
+     * 当前该服务是否可用 比如 raft 可能正处在重新选举
      */
     boolean isAvailable();
 }

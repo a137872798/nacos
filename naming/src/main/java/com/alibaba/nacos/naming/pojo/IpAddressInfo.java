@@ -21,6 +21,7 @@ import java.util.Map;
 /**
  * @author caogu.wyp
  * @version $Id: IpAddressInfo.java, v 0.1 2018-09-17 上午10:52 caogu.wyp Exp $$
+ * 节点地址信息
  */
 public class IpAddressInfo implements Serializable {
 

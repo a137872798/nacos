@@ -78,6 +78,10 @@ public class SpasAdapter {
         return CredentialService.getInstance().getCredential().getSecretKey();
     }
 
+    /**
+     * 从认证模块 获取 ak信息
+     * @return
+     */
     public static String getAk() {
         return CredentialService.getInstance().getCredential().getAccessKey();
     }

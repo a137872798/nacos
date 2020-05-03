@@ -19,6 +19,7 @@ import java.util.concurrent.*;
 
 /**
  * @author nacos
+ * 在全局范围管理一些定时任务的
  */
 public class GlobalExecutor {
 
@@ -136,6 +137,10 @@ public class GlobalExecutor {
             return t;
         }
     });
+
+    // 注意上面的定时器在细节上的差别 (执行频率不同的定时器 使用的线程数也不同 )
+
+    // 下面的方法负责将任务提交到线程池
 
     public static void submitDataSync(Runnable runnable, long delay) {
         dataSyncExecutor.schedule(runnable, delay, TimeUnit.MILLISECONDS);

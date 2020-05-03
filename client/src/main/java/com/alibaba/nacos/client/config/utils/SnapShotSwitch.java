@@ -21,6 +21,7 @@ import com.alibaba.nacos.client.config.impl.LocalConfigInfoProcessor;
  * Snapshot switch
  *
  * @author Nacos
+ * 默认情况 快照是打开的
  */
 public class SnapShotSwitch {
 

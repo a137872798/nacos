@@ -34,6 +34,8 @@ import java.util.concurrent.TimeUnit;
  *
  * @author nkorange
  * @since 1.0.0
+ * 任务分发器 对象
+ * 对应的抽象层是当插入某个服务时 做一个任务分发的逻辑 一般情况下就是集群间的数据同步 比如基于AP模式肯定就要将本次的bian't
  */
 @Component
 public class TaskDispatcher {
@@ -41,12 +43,19 @@ public class TaskDispatcher {
     @Autowired
     private GlobalConfig partitionConfig;
 
+    /**
+     * 对应基于AP的注册中心  每当往某节点注册提供者时 信息需要同步到集群其他节点
+     */
     @Autowired
     private DataSyncer dataSyncer;
 
+    /**
+     * 代表n 个任务处理器
+     */
     private List<TaskScheduler> taskSchedulerList = new ArrayList<>();
 
     private final int cpuCoreCount = Runtime.getRuntime().availableProcessors();
+
 
     @PostConstruct
     public void init() {
@@ -57,10 +66,18 @@ public class TaskDispatcher {
         }
     }
 
+    /**
+     * 采用hash负载的方式 插入到某个 定时任务下
+     * 当 通过 DistroConsistencyServiceImpl 插入某个 service 下所有服务实例时就会触发该方法
+     * @param key
+     */
     public void addTask(String key) {
         taskSchedulerList.get(UtilsAndCommons.shakeUp(key, cpuCoreCount)).addTask(key);
     }
 
+    /**
+     * 任务定时器
+     */
     public class TaskScheduler implements Runnable {
 
         private int index;
@@ -91,6 +108,7 @@ public class TaskDispatcher {
 
                 try {
 
+                    // 从队列中拉取 key  对应某个 service的信息
                     String key = queue.poll(partitionConfig.getTaskDispatchPeriod(),
                         TimeUnit.MILLISECONDS);
 
@@ -98,6 +116,7 @@ public class TaskDispatcher {
                         Loggers.DISTRO.debug("got key: {}", key);
                     }
 
+                    // 如果集群中没有节点可用 则忽略
                     if (dataSyncer.getServers() == null || dataSyncer.getServers().isEmpty()) {
                         continue;
                     }
@@ -106,6 +125,7 @@ public class TaskDispatcher {
                         continue;
                     }
 
+                    // 每当处理完一批数据后 dataSize 要重置成0  所以keys要清空
                     if (dataSize == 0) {
                         keys = new ArrayList<>();
                     }
@@ -113,6 +133,7 @@ public class TaskDispatcher {
                     keys.add(key);
                     dataSize++;
 
+                    // 这里是尽可能采用批量处理  等数量达到1000 或者 距离上一次分发 经过了多久
                     if (dataSize == partitionConfig.getBatchSyncKeyCount() ||
                         (System.currentTimeMillis() - lastDispatchTime) > partitionConfig.getTaskDispatchPeriod()) {
 
@@ -120,6 +141,7 @@ public class TaskDispatcher {
                             if (NetUtils.localServer().equals(member.getKey())) {
                                 continue;
                             }
+                            // 生成同步任务
                             SyncTask syncTask = new SyncTask();
                             syncTask.setKeys(keys);
                             syncTask.setTargetServer(member.getKey());
@@ -128,6 +150,7 @@ public class TaskDispatcher {
                                 Loggers.DISTRO.debug("add sync task: {}", JSON.toJSONString(syncTask));
                             }
 
+                            // 该对象会负责与其他server 进行通信
                             dataSyncer.submit(syncTask, 0);
                         }
                         lastDispatchTime = System.currentTimeMillis();

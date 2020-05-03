@@ -21,6 +21,7 @@ import com.alibaba.nacos.api.exception.NacosException;
  * Config Filter Chain Interface
  *
  * @author Nacos
+ * 拦截链 做可插拔处理
  */
 public interface IConfigFilterChain {
     /**

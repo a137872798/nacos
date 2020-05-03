@@ -19,7 +19,7 @@ import com.alibaba.nacos.config.server.manager.AbstractTask;
 
 /**
  * Notify task
- *
+ * 通知数据发生变动的任务
  * @author Nacos
  */
 public class NotifyTask extends AbstractTask {

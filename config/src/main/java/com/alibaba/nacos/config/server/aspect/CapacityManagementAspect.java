@@ -39,6 +39,7 @@ import java.nio.charset.Charset;
  *
  * @author hexu.hxy
  * @date 2018/3/13
+ * 当写入配置或者删除配置 自动同步容量信息
  */
 @Aspect
 public class CapacityManagementAspect {

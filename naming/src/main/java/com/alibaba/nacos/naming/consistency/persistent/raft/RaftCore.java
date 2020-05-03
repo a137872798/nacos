@@ -55,11 +55,14 @@ import java.util.zip.GZIPOutputStream;
 import static com.alibaba.nacos.core.utils.SystemUtils.STANDALONE_MODE;
 
 /**
+ * 实现raft的核心逻辑
+ * 粗略看下 相比 jraft 瑕疵过多 根本没有考虑脑裂的情况
  * @author nacos
  */
 @Component
 public class RaftCore {
 
+    // 一些api地址常量
     public static final String API_VOTE = UtilsAndCommons.NACOS_NAMING_CONTEXT + "/raft/vote";
 
     public static final String API_BEAT = UtilsAndCommons.NACOS_NAMING_CONTEXT + "/raft/beat";
@@ -92,18 +95,19 @@ public class RaftCore {
 
     public static final int PUBLISH_TERM_INCREASE_COUNT = 100;
 
+    /**
+     * 该对象内部也包含了 监听器
+     */
     private volatile Map<String, List<RecordListener>> listeners = new ConcurrentHashMap<>();
 
+    /**
+     * key 是service相关的  value 代表该service 下所有实例
+     */
     private volatile ConcurrentMap<String, Datum> datums = new ConcurrentHashMap<>();
 
+    // raft相关的一些组件
     @Autowired
     private RaftPeerSet peers;
-
-    @Autowired
-    private SwitchDomain switchDomain;
-
-    @Autowired
-    private GlobalConfig globalConfig;
 
     @Autowired
     private RaftProxy raftProxy;
@@ -111,6 +115,15 @@ public class RaftCore {
     @Autowired
     private RaftStore raftStore;
 
+    @Autowired
+    private SwitchDomain switchDomain;
+
+    @Autowired
+    private GlobalConfig globalConfig;
+
+    /**
+     * 该对象相当于是 监听器 与 task的桥梁 外部基于事件往该对象填充task 该对象异步触发监听器
+     */
     public volatile Notifier notifier = new Notifier();
 
     private boolean initialized = false;
@@ -124,12 +137,15 @@ public class RaftCore {
 
         long start = System.currentTimeMillis();
 
+        // 当基于CP实现的注册中心重启时 会先从配置文件中加载历史记录  用于避免 raft还没有找到leader 的情况
         raftStore.loadDatums(notifier, datums);
 
+        // 从元数据文件中恢复当前任期信息
         setTerm(NumberUtils.toLong(raftStore.loadMeta().getProperty("term"), 0L));
 
         Loggers.RAFT.info("cache loaded, datum count: {}, current term: {}", datums.size(), peers.getTerm());
 
+        // 等待监听器的逻辑触发完
         while (true) {
             if (notifier.tasks.size() <= 0) {
                 break;
@@ -141,6 +157,7 @@ public class RaftCore {
 
         Loggers.RAFT.info("finish to load data from disk, cost: {} ms.", (System.currentTimeMillis() - start));
 
+        // 注册心跳及选举任务
         GlobalExecutor.registerMasterElection(new MasterElection());
         GlobalExecutor.registerHeartbeat(new HeartBeat());
 
@@ -152,8 +169,20 @@ public class RaftCore {
         return listeners;
     }
 
+    /**
+     * 参照raft协议 也就是当往raft集群中某一节点写入数据时  需要成功写入半数以上的节点时本次才算是成功写入
+     * 回顾一下 jraft 是怎么做的
+     * 3种情况
+     * 1.leader任期比该节点旧 写入失败 然后leader 降级为follower
+     * 2.任期一致直接写入
+     * 3.leader任期比该节点新  那么该节点要不断回退 找到偏移量不一致的地方 从那里开始覆盖 直到同步
+     * @param key
+     * @param value
+     * @throws Exception
+     */
     public void signalPublish(String key, Record value) throws Exception {
 
+        // 当前不是leader的情况是不具备写入能力的  raft协议要求写入的节点必须是leader节点
         if (!isLeader()) {
             JSONObject params = new JSONObject();
             params.put("key", key);
@@ -161,16 +190,19 @@ public class RaftCore {
             Map<String, String> parameters = new HashMap<>(1);
             parameters.put("key", key);
 
+            // 这里转发到 leader节点 进行写入
             raftProxy.proxyPostLarge(getLeader().ip, API_PUB, params.toJSONString(), parameters);
             return;
         }
 
+        // 如果是leader 节点 直接进行写入
         try {
             OPERATE_LOCK.lock();
             long start = System.currentTimeMillis();
             final Datum datum = new Datum();
             datum.key = key;
             datum.value = value;
+            // 这个 timestamp 更像一个版本号
             if (getDatum(key) == null) {
                 datum.timestamp.set(1L);
             } else {
@@ -179,13 +211,17 @@ public class RaftCore {
 
             JSONObject json = new JSONObject();
             json.put("datum", datum);
+            // 将本节点作为leader节点
             json.put("source", peers.local());
 
+            // 首先将数据提交到本地节点
             onPublish(datum, peers.local());
 
             final String content = JSON.toJSONString(json);
 
+            // 他这个根本不是标准实现首先 写入半数成功就包含了 leader 而下面要求的数量根本没有包含leader 也就是除了leader外 还要成功写入2n + 1的节点数  语义已经曲解了
             final CountDownLatch latch = new CountDownLatch(peers.majorityCount());
+            // 开始尝试写入至少半数节点
             for (final String server : peers.allServersIncludeMyself()) {
                 if (isLeader(server)) {
                     latch.countDown();
@@ -225,6 +261,11 @@ public class RaftCore {
         }
     }
 
+    /**
+     * 向raft集群提交某个删除操作  卧槽这个删除操作都不需要超过半数了  一半节点脑裂没收到请求呢
+     * @param key
+     * @throws Exception
+     */
     public void signalDelete(final String key) throws Exception {
 
         OPERATE_LOCK.lock();
@@ -233,6 +274,7 @@ public class RaftCore {
             if (!isLeader()) {
                 Map<String, String> params = new HashMap<>(1);
                 params.put("key", URLEncoder.encode(key, "UTF-8"));
+                // 转发到leader节点提交删除请求
                 raftProxy.proxy(getLeader().ip, API_DEL, params, HttpMethod.DELETE);
                 return;
             }
@@ -270,6 +312,12 @@ public class RaftCore {
         }
     }
 
+    /**
+     * 将数据提交到某个节点
+     * @param datum
+     * @param source  本次收到数据并发起写入请求的leader节点(不一定是有效的 可能任期已经落后 比如脑裂)
+     * @throws Exception
+     */
     public void onPublish(Datum datum, RaftPeer source) throws Exception {
         RaftPeer local = peers.local();
         if (datum.value == null) {
@@ -284,6 +332,7 @@ public class RaftCore {
                 "data but wasn't leader");
         }
 
+        // 当leader节点的任期小于本地节点 也就是此时leader是无效的 那么写入失败
         if (source.term.get() < local.term.get()) {
             Loggers.RAFT.warn("out of date publish, pub-term: {}, cur-term: {}",
                 JSON.toJSONString(source), JSON.toJSONString(local));
@@ -291,28 +340,38 @@ public class RaftCore {
                 + source.term.get() + ", cur-term: " + local.term.get());
         }
 
+        // 更新 选举leader的时间戳
         local.resetLeaderDue();
 
         // if data should be persisted, usually this is true:
+        // 确保本次传入的数据是 使用基于持久化的 分布式一致性算法
         if (KeyBuilder.matchPersistentKey(datum.key)) {
+            // 将数据写入到文件中  基于AP实现的只需要写入到内存中
             raftStore.write(datum);
         }
 
+        // 在内存中保留一个缓存
         datums.put(datum.key, datum);
 
         if (isLeader()) {
             local.term.addAndGet(PUBLISH_TERM_INCREASE_COUNT);
         } else {
+            // 这行是什么鬼???  2个根本不是一个东西啊
             if (local.term.get() + PUBLISH_TERM_INCREASE_COUNT > source.term.get()) {
-                //set leader term:
+                //set leader term:   代表本地缓存的那个leader 已经过期了
+                // 应该要确保数据完全同步后才能同步任期啊  否则下次写入发现任期一致偏移量一致 怎么知道之前写入的是不是脏数据 难道每次都要重新对比???
+                // 任期既然已经一致了就确保了当前偏移量往前的数据必然是一致的
+                // 这里根本就不考虑脏数据的清理问题
                 getLeader().term.set(source.term.get());
                 local.term.set(getLeader().term.get());
             } else {
                 local.term.addAndGet(PUBLISH_TERM_INCREASE_COUNT);
             }
         }
+        // 持久化任期信息
         raftStore.updateTerm(local.term.get());
 
+        // 触发连接到本节点的监听器
         notifier.addTask(datum.key, ApplyAction.CHANGE);
 
         Loggers.RAFT.info("data added/updated, key={}, term={}", datum.key, local.term);
@@ -343,6 +402,7 @@ public class RaftCore {
 
         if (KeyBuilder.matchServiceMetaKey(key)) {
 
+            // 它这里是吧提交数作为一个简易的偏移量 但是这行逻辑还是有问题啊
             if (local.term.get() + PUBLISH_TERM_INCREASE_COUNT > source.term.get()) {
                 //set leader term:
                 getLeader().term.set(source.term.get());
@@ -358,16 +418,21 @@ public class RaftCore {
 
     }
 
+    /**
+     * 定期触发重新选举
+     */
     public class MasterElection implements Runnable {
         @Override
         public void run() {
             try {
 
+                // 确保此时本地已经获取到集群内所有server
                 if (!peers.isReady()) {
                     return;
                 }
 
                 RaftPeer local = peers.local();
+                // 每次减少一定的量  满足条件后 触发重选举
                 local.leaderDueMs -= GlobalExecutor.TICK_PERIOD_MS;
 
                 if (local.leaderDueMs > 0) {
@@ -375,9 +440,11 @@ public class RaftCore {
                 }
 
                 // reset timeout
+                // 重置下次的选举时间
                 local.resetLeaderDue();
                 local.resetHeartbeatDue();
 
+                // 尝试发起一次投票
                 sendVote();
             } catch (Exception e) {
                 Loggers.RAFT.warn("[RAFT] error while master election {}", e);
@@ -391,8 +458,10 @@ public class RaftCore {
             Loggers.RAFT.info("leader timeout, start voting,leader: {}, term: {}",
                 JSON.toJSONString(getLeader()), local.term);
 
+            // 每个节点应该是不需要维护其他节点本轮的投票对象的 只有发起投票方知道就够了
             peers.reset();
 
+            // 这里是直接将自己判定成候选人 再尝试从其他节点拉票 同时为自己投一票  也就是没有 jraft 的预投票环节
             local.term.incrementAndGet();
             local.voteFor = local.ip;
             local.state = RaftPeer.State.CANDIDATE;
@@ -426,12 +495,18 @@ public class RaftCore {
         }
     }
 
+    /**
+     * 接收到一个投票请求
+     * @param remote
+     * @return
+     */
     public synchronized RaftPeer receivedVote(RaftPeer remote) {
         if (!peers.contains(remote)) {
             throw new IllegalStateException("can not find peer: " + remote.ip);
         }
 
         RaftPeer local = peers.get(NetUtils.localServer());
+        // 打回请求就够了呀 为什么自己直接决定好投票人了
         if (remote.term.get() <= local.term.get()) {
             String msg = "received illegitimate vote" +
                 ", voter-term:" + remote.term + ", votee-term:" + local.term;
@@ -479,8 +554,14 @@ public class RaftCore {
 
         }
 
+        /**
+         * 心跳任务的作用是同步集群内所有节点的状态
+         * @throws IOException
+         * @throws InterruptedException
+         */
         public void sendBeat() throws IOException, InterruptedException {
             RaftPeer local = peers.local();
+            // 必须是leader节点
             if (local.state != RaftPeer.State.LEADER && !STANDALONE_MODE) {
                 return;
             }
@@ -501,6 +582,7 @@ public class RaftCore {
                 Loggers.RAFT.info("[SEND-BEAT-ONLY] {}", String.valueOf(switchDomain.isSendBeatOnly()));
             }
 
+            // 加工所有数据
             if (!switchDomain.isSendBeatOnly()) {
                 for (Datum datum : datums.values()) {
 
@@ -575,6 +657,12 @@ public class RaftCore {
         }
     }
 
+    /**
+     * 接收心跳数据  这里强制性同步元数据  以及leader 节点内写入的所有数据
+     * @param beat
+     * @return
+     * @throws Exception
+     */
     public RaftPeer receivedBeat(JSONObject beat) throws Exception {
         final RaftPeer local = peers.local();
         final RaftPeer remote = new RaftPeer();
@@ -612,6 +700,7 @@ public class RaftCore {
 
         peers.makeLeader(remote);
 
+        // 强制同步所有数据
         if (!switchDomain.isSendBeatOnly()) {
 
             Map<String, Integer> receivedKeysMap = new HashMap<>(datums.size());
@@ -649,10 +738,12 @@ public class RaftCore {
                 receivedKeysMap.put(datumKey, 1);
 
                 try {
+                    // 这里是什么意思???
                     if (datums.containsKey(datumKey) && datums.get(datumKey).timestamp.get() >= timestamp && processedCount < beatDatums.size()) {
                         continue;
                     }
 
+                    // 只有落后的数据需要写入?? 不需要覆盖脏数据???
                     if (!(datums.containsKey(datumKey) && datums.get(datumKey).timestamp.get() >= timestamp)) {
                         batch.add(datumKey);
                     }
@@ -671,6 +762,7 @@ public class RaftCore {
                         , getLeader().ip, batch.size(), processedCount, beatDatums.size(), datums.size());
 
                     // update datum entry
+                    // 拉取leader的数据
                     String url = buildURL(remote.ip, API_GET) + "?keys=" + URLEncoder.encode(keys, "UTF-8");
                     HttpClient.asyncHttpGet(url, null, null, new AsyncCompletionHandler<Integer>() {
                         @Override
@@ -718,6 +810,7 @@ public class RaftCore {
                                         continue;
                                     }
 
+                                    // 从leader拉取最新数据并覆盖
                                     raftStore.write(newDatum);
 
                                     datums.put(newDatum.key, newDatum);
@@ -756,6 +849,7 @@ public class RaftCore {
 
             }
 
+            // 代表leader上已经不包含 该 key了 所以允许删除
             List<String> deadKeys = new ArrayList<>();
             for (Map.Entry<String, Integer> entry : receivedKeysMap.entrySet()) {
                 if (entry.getValue() == 0) {
@@ -837,6 +931,12 @@ public class RaftCore {
         return peers.isLeader(NetUtils.localServer());
     }
 
+    /**
+     * 构建 api url
+     * @param ip
+     * @param api
+     * @return
+     */
     public static String buildURL(String ip, String api) {
         if (!ip.contains(UtilsAndCommons.IP_PORT_SPLITER)) {
             ip = ip + UtilsAndCommons.IP_PORT_SPLITER + RunningConfig.getServerPort();
@@ -908,12 +1008,23 @@ public class RaftCore {
         return notifier.getTaskSize();
     }
 
+    /**
+     * 该对象 负责触发监听器的 onChange onDelete 方法
+     */
     public class Notifier implements Runnable {
 
+        /**
+         * 用于去重
+         */
         private ConcurrentHashMap<String, String> services = new ConcurrentHashMap<>(10 * 1024);
 
         private BlockingQueue<Pair> tasks = new LinkedBlockingQueue<>(1024 * 1024);
 
+        /**
+         * 当某个服务发生变化时 将key 和对应的行为存入任务队列
+         * @param datumKey
+         * @param action
+         */
         public void addTask(String datumKey, ApplyAction action) {
 
             if (services.containsKey(datumKey) && action == ApplyAction.CHANGE) {
@@ -932,6 +1043,9 @@ public class RaftCore {
             return tasks.size();
         }
 
+        /**
+         * 定期处理任务队列中数据 触发监听器
+         */
         @Override
         public void run() {
             Loggers.RAFT.info("raft notifier started");
@@ -954,10 +1068,13 @@ public class RaftCore {
 
                     int count = 0;
 
+                    // 找到内置的监听器 (也就是 serviceManager)
                     if (listeners.containsKey(KeyBuilder.SERVICE_META_KEY_PREFIX)) {
 
+                        // 代表本次事件是  service
                         if (KeyBuilder.matchServiceMetaKey(datumKey) && !KeyBuilder.matchSwitchKey(datumKey)) {
 
+                            // 触发内置监听器  也就是更新service信息
                             for (RecordListener listener : listeners.get(KeyBuilder.SERVICE_META_KEY_PREFIX)) {
                                 try {
                                     if (action == ApplyAction.CHANGE) {
@@ -978,6 +1095,7 @@ public class RaftCore {
                         continue;
                     }
 
+                    // 找到  service级别的监听器
                     for (RecordListener listener : listeners.get(datumKey)) {
 
                         count++;

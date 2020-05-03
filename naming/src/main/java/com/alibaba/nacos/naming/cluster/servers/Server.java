@@ -23,6 +23,7 @@ import com.alibaba.nacos.naming.misc.UtilsAndCommons;
  *
  * @author nkorange
  * @since 1.0.0
+ * 代表一个服务器实例   一个集群就是由多个 server 构成的
  */
 public class Server implements Comparable<Server> {
 
@@ -38,13 +39,20 @@ public class Server implements Comparable<Server> {
 
     private String site = UtilsAndCommons.UNKNOWN_SITE;
 
+    /**
+     * 每个服务器本身有一个权重值  每当尝试访问集群中某个节点时 会根据权重优先使用某个server
+     */
     private int weight = 1;
 
     /**
      * additional weight, used to adjust manually
+     * 一个额外的权重  方便调整server的优先级
      */
     private int adWeight;
 
+    /**
+     * 当前server 是否处于启动状态
+     */
     private boolean alive = false;
 
     private long lastRefTime = 0L;

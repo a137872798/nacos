@@ -24,12 +24,14 @@ import java.io.IOException;
  * datasource interface
  *
  * @author Nacos
+ * 数据源服务接口   配置中心需要一个能够提供配置的数据源
  */
 public interface DataSourceService {
     /**
      * reload
      *
      * @throws IOException exception
+     * 重新加载数据(配置)
      */
     void reload() throws IOException;
 
@@ -37,6 +39,7 @@ public interface DataSourceService {
      * check master db
      *
      * @return is master
+     * 检查 db当前是否处于可用状态
      */
     boolean checkMasterWritable();
 
@@ -44,6 +47,7 @@ public interface DataSourceService {
      * get jdbc template
      *
      * @return JdbcTemplate
+     * 获取jdbc模板
      */
     JdbcTemplate getJdbcTemplate();
 
@@ -51,11 +55,13 @@ public interface DataSourceService {
      * get transaction template
      *
      * @return TransactionTemplate
+     * 获取事务模板对象
      */
     TransactionTemplate getTransactionTemplate();
 
     /**
      * get current db url
+     * 获取当前 db的url
      *
      * @return
      */

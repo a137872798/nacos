@@ -26,6 +26,7 @@ import java.util.stream.Collectors;
 
 /**
  * @author nacos
+ * 根据心跳任务的类型自动匹配合适的 processor
  */
 @Component("healthCheckDelegate")
 public class HealthCheckProcessorDelegate implements HealthCheckProcessor {

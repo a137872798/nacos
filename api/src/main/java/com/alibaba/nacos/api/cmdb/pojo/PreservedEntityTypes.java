@@ -18,6 +18,7 @@ package com.alibaba.nacos.api.cmdb.pojo;
 /**
  * @author nkorange
  * @since 0.7.0
+ * 对应实体在 cmdb的存储方式
  */
 public enum PreservedEntityTypes {
     /**

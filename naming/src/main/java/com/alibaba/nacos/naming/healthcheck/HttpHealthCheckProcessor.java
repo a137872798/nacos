@@ -43,6 +43,7 @@ import static com.alibaba.nacos.naming.misc.Loggers.SRV_LOG;
  * HTTP health check processor
  *
  * @author xuanyin.zy
+ * 基于 Http 进行心跳检测
  */
 @Component
 public class HttpHealthCheckProcessor implements HealthCheckProcessor {
@@ -84,13 +85,19 @@ public class HttpHealthCheckProcessor implements HealthCheckProcessor {
         return TYPE;
     }
 
+    /**
+     * 执行心跳检测任务
+     * @param task check task
+     */
     @Override
     public void process(HealthCheckTask task) {
+        // 获取目标集群下所有节点
         List<Instance> ips = task.getCluster().allIPs(false);
         if (CollectionUtils.isEmpty(ips)) {
             return;
         }
 
+        // 确保允许进行心跳检测
         if (!switchDomain.isHealthCheckEnabled()) {
             return;
         }
@@ -100,6 +107,7 @@ public class HttpHealthCheckProcessor implements HealthCheckProcessor {
         for (Instance ip : ips) {
             try {
 
+                // 被标记的实例不需要进行心跳检测
                 if (ip.isMarked()) {
                     if (SRV_LOG.isDebugEnabled()) {
                         SRV_LOG.debug("http check, ip is marked as to skip health check, ip: {}" + ip.getIp());
@@ -107,6 +115,7 @@ public class HttpHealthCheckProcessor implements HealthCheckProcessor {
                     continue;
                 }
 
+                // CAS 失败  代表出现竞争 就跳过
                 if (!ip.markChecking()) {
                     SRV_LOG.warn("http check started before last one finished, service: {}:{}:{}",
                         task.getCluster().getService().getName(), task.getCluster().getName(), ip.getIp());
@@ -115,8 +124,10 @@ public class HttpHealthCheckProcessor implements HealthCheckProcessor {
                     continue;
                 }
 
+                // 找到该集群对应的 检查器
                 AbstractHealthChecker.Http healthChecker = (AbstractHealthChecker.Http) cluster.getHealthChecker();
 
+                // 代表通过特定的端口进行检测  默认是80端口
                 int ckPort = cluster.isUseIPPort4Check() ? ip.getPort() : cluster.getDefCkport();
                 URL host = new URL("http://" + ip.getIp() + ":" + ckPort);
                 URL target = new URL(host, healthChecker.getPath());
@@ -132,6 +143,7 @@ public class HttpHealthCheckProcessor implements HealthCheckProcessor {
                     builder.setHeader(entry.getKey(), entry.getValue());
                 }
 
+                // 发送http 请求
                 builder.execute(new HttpHealthCheckCallback(ip, task));
                 MetricsMonitor.getHttpHealthCheckMonitor().incrementAndGet();
             } catch (Throwable e) {
@@ -142,8 +154,17 @@ public class HttpHealthCheckProcessor implements HealthCheckProcessor {
         }
     }
 
+    /**
+     * 当http请求收到结果时 使用该对象处理
+     */
     private class HttpHealthCheckCallback extends AsyncCompletionHandler<Integer> {
+        /**
+         * 标记本次请求是针对哪个实例的
+         */
         private Instance ip;
+        /**
+         * 对应的检测任务
+         */
         private HealthCheckTask task;
 
         private long startTime = System.currentTimeMillis();
@@ -158,6 +179,7 @@ public class HttpHealthCheckProcessor implements HealthCheckProcessor {
             ip.setCheckRT(System.currentTimeMillis() - startTime);
 
             int httpCode = response.getStatusCode();
+            // 正常收到回复
             if (HttpURLConnection.HTTP_OK == httpCode) {
                 healthCheckCommon.checkOK(ip, task, "http:" + httpCode);
                 healthCheckCommon.reEvaluateCheckRT(System.currentTimeMillis() - startTime, task, switchDomain.getHttpHealthParams());

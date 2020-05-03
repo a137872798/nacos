@@ -119,23 +119,31 @@ public class SystemUtils {
         return NACOS_HOME + File.separator + "conf" + File.separator + "cluster.conf";
     }
 
+    /**
+     * @return
+     * @throws IOException
+     */
     public static List<String> readClusterConf() throws IOException {
         List<String> instanceList = new ArrayList<String>();
         try(Reader reader = new InputStreamReader(new FileInputStream(new File(CLUSTER_CONF_FILE_PATH)),
         StandardCharsets.UTF_8)) {
+            // 解析配置行
             List<String> lines = IoUtils.readLines(reader);
             String comment = "#";
             for (String line : lines) {
                 String instance = line.trim();
+                // 跳过注释
                 if (instance.startsWith(comment)) {
                     // # it is ip
                     continue;
                 }
+                // 忽略注释后面的部分
                 if (instance.contains(comment)) {
                     // 192.168.71.52:8848 # Instance A
                     instance = instance.substring(0, instance.indexOf(comment));
                     instance = instance.trim();
                 }
+                // 按照分隔符拆分
                 int multiIndex = instance.indexOf(Constants.COMMA_DIVISION);
                 if (multiIndex > 0) {
                     // support the format: ip1:port,ip2:port  # multi inline

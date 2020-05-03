@@ -27,6 +27,12 @@ import java.util.List;
  */
 public class NoneSelector extends com.alibaba.nacos.api.selector.NoneSelector implements Selector {
 
+    /**
+     * 不做选择 直接返回原实例列表
+     * @param consumer  consumer address
+     * @param providers candidate provider addresses
+     * @return
+     */
     @Override
     public List<Instance> select(String consumer, List<Instance> providers) {
         return providers;

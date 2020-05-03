@@ -32,10 +32,14 @@ import org.springframework.stereotype.Service;
  *
  * @author nkorange
  * @since 1.0.0
+ * 基于raft协议实现的数据一致性
  */
 @Service
 public class RaftConsistencyServiceImpl implements PersistentConsistencyService {
 
+    /**
+     * 核心逻辑 都包含在该对象内
+     */
     @Autowired
     private RaftCore raftCore;
 
@@ -45,6 +49,12 @@ public class RaftConsistencyServiceImpl implements PersistentConsistencyService 
     @Autowired
     private SwitchDomain switchDomain;
 
+    /**
+     * 当数据写入时 需要由raft集群内超半数节点成功才算写入成功
+     * @param key   key of data, this key should be globally unique
+     * @param value value of data
+     * @throws NacosException
+     */
     @Override
     public void put(String key, Record value) throws NacosException {
         try {
@@ -55,6 +65,11 @@ public class RaftConsistencyServiceImpl implements PersistentConsistencyService 
         }
     }
 
+    /**
+     * 从 raft集群中移除某个 key
+     * @param key key of data
+     * @throws NacosException
+     */
     @Override
     public void remove(String key) throws NacosException {
         try {
@@ -73,6 +88,12 @@ public class RaftConsistencyServiceImpl implements PersistentConsistencyService 
         }
     }
 
+    /**
+     * 从基于raft实现的数据一致性协调系统中获取某个数据  (存储在 raftStore中)
+     * @param key key of data
+     * @return
+     * @throws NacosException
+     */
     @Override
     public Datum get(String key) throws NacosException {
         return raftCore.getDatum(key);
@@ -93,6 +114,12 @@ public class RaftConsistencyServiceImpl implements PersistentConsistencyService 
         return raftCore.isInitialized() || ServerStatus.UP.name().equals(switchDomain.getOverriddenServerStatus());
     }
 
+    /**
+     * 代表某个数据写入到 raft集群的某个节点
+     * @param datum
+     * @param source
+     * @throws NacosException
+     */
     public void onPut(Datum datum, RaftPeer source) throws NacosException {
         try {
             raftCore.onPublish(datum, source);
